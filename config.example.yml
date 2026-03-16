@@ -1,0 +1,22 @@
+telegram:
+  monitored_chats: [-1001234567890]
+  moderator_channel: -1009876543210
+
+rspamd:
+  url: "http://rspamd:11333"
+  password: "${RSPAMD_PASSWORD}"
+  timeout: 10s
+
+redis:
+  addr: "redis:6379"
+  db: 0
+
+clickhouse:
+  dsn: "clickhouse://clickhouse:9000/telegram_bot"
+
+thresholds:
+  log_score: 5.0
+  reject_score: 15.0
+
+maps:
+  dir: "/maps"

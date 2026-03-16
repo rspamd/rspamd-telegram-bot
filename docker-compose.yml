@@ -1,0 +1,58 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    volumes:
+      - ./config.yml:/app/config.yml:ro
+      - maps-data:/maps
+    depends_on:
+      rspamd:
+        condition: service_started
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+
+  rspamd:
+    build: ./rspamd
+    environment:
+      RSPAMD_OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      RSPAMD_OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.0-flash-001}
+    volumes:
+      - ./rspamd/local.d:/etc/rspamd/local.d:ro
+      - ./rspamd/lua.local.d:/etc/rspamd/lua.local.d:ro
+      - ./rspamd/modules.local.d:/etc/rspamd/modules.local.d:ro
+      - maps-data:/etc/rspamd/maps.d
+      - rspamd-data:/var/lib/rspamd
+      - ./rspamd/fasttext:/var/lib/rspamd/fasttext:ro
+    depends_on:
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+volumes:
+  rspamd-data:
+  redis-data:
+  clickhouse-data:
+  maps-data:

@@ -1,0 +1,38 @@
+# Binary
+/bot
+/cmd/bot/bot
+
+# Config with secrets
+config.yml
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# Training data
+*.txt
+!.env.example
+
+# Claude cache
+.claude/cache/
+
+# FastText models (large binaries, deploy only)
+rspamd/fasttext/*.bin
+rspamd/fasttext/*.ftz
+
+# Seed maps (generated from scripts, deploy only)
+rspamd/seed-maps/*.map
+rspamd/seed-maps/*.cf
+
+# Backups
+backups/
