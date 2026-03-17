@@ -1,0 +1,72 @@
+# Profile-based spam detection rules
+# Checks Telegram user metadata via X-Telegram-* headers
+
+# Enclosed alphanumerics in name (🄺🄰🅁🄸🄽🄰 style)
+# Unicode block: U+2460-U+24FF (Enclosed Alphanumerics), U+1F100-U+1F1FF (Enclosed Alphanumeric Supplement)
+header TG_NAME_ENCLOSED_ALPHA X-Telegram-First-Name =~ /[\x{2460}-\x{24ff}\x{1f100}-\x{1f1ff}]{2,}/iu
+score TG_NAME_ENCLOSED_ALPHA 6.0
+describe TG_NAME_ENCLOSED_ALPHA Display name uses enclosed/squared Unicode letters
+
+# Mathematical alphanumeric symbols in name (𝕬𝖓𝖓𝖆, 𝐴𝑛𝑓𝑖𝑠𝑎 style)
+# Unicode block: U+1D400-U+1D7FF (Mathematical Alphanumeric Symbols)
+header TG_NAME_MATH_FONT X-Telegram-First-Name =~ /[\x{1d400}-\x{1d7ff}]{2,}/u
+score TG_NAME_MATH_FONT 6.0
+describe TG_NAME_MATH_FONT Display name uses mathematical Unicode font
+
+# Same checks for last name
+header TG_LASTNAME_ENCLOSED_ALPHA X-Telegram-Last-Name =~ /[\x{2460}-\x{24ff}\x{1f100}-\x{1f1ff}]{2,}/iu
+score TG_LASTNAME_ENCLOSED_ALPHA 5.0
+describe TG_LASTNAME_ENCLOSED_ALPHA Last name uses enclosed/squared Unicode letters
+
+header TG_LASTNAME_MATH_FONT X-Telegram-Last-Name =~ /[\x{1d400}-\x{1d7ff}]{2,}/u
+score TG_LASTNAME_MATH_FONT 5.0
+describe TG_LASTNAME_MATH_FONT Last name uses mathematical Unicode font
+
+# Username is random gibberish: many uppercase+lowercase+digits mixed, 12+ chars
+header TG_USERNAME_RANDOM X-Telegram-Username =~ /^[a-zA-Z0-9]{12,}$/
+score TG_USERNAME_RANDOM 3.0
+describe TG_USERNAME_RANDOM Username looks randomly generated (12+ mixed alphanumeric)
+
+# Username with excessive digits at the end (bot-generated)
+header TG_USERNAME_TRAILING_DIGITS X-Telegram-Username =~ /[a-zA-Z][a-zA-Z0-9]*\d{5,}$/
+score TG_USERNAME_TRAILING_DIGITS 2.0
+describe TG_USERNAME_TRAILING_DIGITS Username ends with 5+ digits (bot-generated pattern)
+
+# First name is gibberish consonants (Vjmarggo, Fhyfdk style)
+# High consonant ratio with no recognizable pattern
+header TG_NAME_GIBBERISH X-Telegram-First-Name =~ /^[bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ]{3}[a-zA-Z]*$/
+score TG_NAME_GIBBERISH 3.0
+describe TG_NAME_GIBBERISH First name starts with 3+ consonants (gibberish)
+
+# Last name is gibberish
+header TG_LASTNAME_GIBBERISH X-Telegram-Last-Name =~ /^[bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ]{3}[a-zA-Z]*$/
+score TG_LASTNAME_GIBBERISH 3.0
+describe TG_LASTNAME_GIBBERISH Last name starts with 3+ consonants (gibberish)
+
+# Regional indicator symbols in name (flag emoji abuse)
+header TG_NAME_FLAGS X-Telegram-First-Name =~ /[\x{1f1e0}-\x{1f1ff}]{4,}/u
+score TG_NAME_FLAGS 2.0
+describe TG_NAME_FLAGS Display name has excessive flag emoji
+
+# Combining diacritical marks abuse (z̷̢a̵̛l̸̰g̵̢o̷̡ style)
+header TG_NAME_ZALGO X-Telegram-First-Name =~ /[\x{0300}-\x{036f}]{3,}/u
+score TG_NAME_ZALGO 4.0
+describe TG_NAME_ZALGO Display name has excessive combining marks (zalgo text)
+
+# Name is only emoji/symbols (no letters at all)
+header TG_NAME_EMOJI_ONLY X-Telegram-First-Name =~ /^[^\p{L}\p{N}]+$/u
+score TG_NAME_EMOJI_ONLY 3.0
+describe TG_NAME_EMOJI_ONLY Display name contains no letters or digits
+
+# Meta rules: combinations that are highly indicative of spam accounts
+meta TG_SPAMMER_PROFILE_STRONG (TG_NAME_ENCLOSED_ALPHA || TG_NAME_MATH_FONT) && (TG_LASTNAME_ENCLOSED_ALPHA || TG_LASTNAME_MATH_FONT)
+score TG_SPAMMER_PROFILE_STRONG 5.0
+describe TG_SPAMMER_PROFILE_STRONG Both first and last name use fancy Unicode fonts
+
+meta TG_SPAMMER_PROFILE_GIBBERISH TG_NAME_GIBBERISH && TG_LASTNAME_GIBBERISH
+score TG_SPAMMER_PROFILE_GIBBERISH 4.0
+describe TG_SPAMMER_PROFILE_GIBBERISH Both first and last name are gibberish
+
+meta TG_SPAMMER_PROFILE_RANDOM TG_USERNAME_RANDOM && (TG_NAME_ENCLOSED_ALPHA || TG_NAME_MATH_FONT || TG_NAME_GIBBERISH)
+score TG_SPAMMER_PROFILE_RANDOM 5.0
+describe TG_SPAMMER_PROFILE_RANDOM Random username combined with suspicious display name
