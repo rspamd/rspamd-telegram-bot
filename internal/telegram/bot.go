@@ -95,6 +95,7 @@ func New(ctx context.Context, cfg *config.Config, rspamdClient *rspamd.Client, s
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/channels", bot.MatchTypePrefix, tb.handleChannelsCommand)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/context", bot.MatchTypePrefix, tb.handleContextCommand)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/users", bot.MatchTypePrefix, tb.handleUsersCommand)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/checkprofile", bot.MatchTypePrefix, tb.handleCheckProfileCommand)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/trainspam", bot.MatchTypePrefix, tb.handleTrainSpam)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/trainham", bot.MatchTypePrefix, tb.handleTrainHam)
 

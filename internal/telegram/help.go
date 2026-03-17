@@ -41,6 +41,7 @@ func (tb *Bot) handleHelpCommand(ctx context.Context, b *bot.Bot, update *models
 	sb.WriteString("/channels — list tracked channels\n")
 	sb.WriteString("/users &lt;channel_id&gt; — top users in channel\n")
 	sb.WriteString("/context [channel_id] — show channel context for GPT\n")
+	sb.WriteString("/checkprofile @user or ID — run profile analysis through rspamd\n")
 
 	sb.WriteString("\n<b>Rule management:</b>\n")
 	sb.WriteString("/addregexp &lt;pattern&gt; — add regexp spam rule\n")
@@ -50,10 +51,5 @@ func (tb *Bot) handleHelpCommand(ctx context.Context, b *bot.Bot, update *models
 	sb.WriteString("/delurl &lt;url&gt; — remove URL\n")
 	sb.WriteString("/listurls — list URL rules\n")
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:          msg.Chat.ID,
-		Text:            sb.String(),
-		ParseMode:       models.ParseModeHTML,
-		ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
-	})
+	tb.sendHTML(ctx, b, msg.Chat.ID, sb.String(), msg.ID)
 }

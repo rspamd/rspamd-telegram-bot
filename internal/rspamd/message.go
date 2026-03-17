@@ -29,6 +29,7 @@ type TelegramMessage struct {
 	ForwardFrom    int64
 	IsForward      bool
 	IsAdmin        bool
+	Readonly       bool
 	Timestamp      time.Time
 }
 

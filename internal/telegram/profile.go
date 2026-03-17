@@ -13,7 +13,11 @@ import (
 
 func (tb *Bot) handleUserCommand(ctx context.Context, b *bot.Bot, update *models.Update) {
 	msg := update.Message
-	if msg == nil || msg.Chat.ID != tb.cfg.Telegram.ModeratorChannel {
+	if msg == nil {
+		return
+	}
+	tb.logger.Info("userinfo handler called", "chat_id", msg.Chat.ID, "text", msg.Text)
+	if msg.Chat.ID != tb.cfg.Telegram.ModeratorChannel {
 		return
 	}
 
@@ -82,12 +86,7 @@ func (tb *Bot) handleUserCommand(ctx context.Context, b *bot.Bot, update *models
 	// Format output
 	text := formatProfileReport(userID, profile, messages, contactCount, channels)
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:          msg.Chat.ID,
-		Text:            text,
-		ParseMode:       models.ParseModeHTML,
-		ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
-	})
+	tb.sendHTML(ctx, b, msg.Chat.ID, text, msg.ID)
 }
 
 func (tb *Bot) handleChannelsCommand(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -137,12 +136,7 @@ func (tb *Bot) handleChannelsCommand(ctx context.Context, b *bot.Bot, update *mo
 		sb.WriteString(fmt.Sprintf("   Last activity: %s\n", lastSeen.UTC().Format("2006-01-02 15:04")))
 	}
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:          msg.Chat.ID,
-		Text:            sb.String(),
-		ParseMode:       models.ParseModeHTML,
-		ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
-	})
+	tb.sendHTML(ctx, b, msg.Chat.ID, sb.String(), msg.ID)
 }
 
 func (tb *Bot) handleUsersCommand(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -214,12 +208,7 @@ func (tb *Bot) handleUsersCommand(ctx context.Context, b *bot.Bot, update *model
 		sb.WriteString(fmt.Sprintf("\n... and %d more users\n", totalUsers-30))
 	}
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:          msg.Chat.ID,
-		Text:            sb.String(),
-		ParseMode:       models.ParseModeHTML,
-		ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
-	})
+	tb.sendHTML(ctx, b, msg.Chat.ID, sb.String(), msg.ID)
 }
 
 type channelInfo struct {

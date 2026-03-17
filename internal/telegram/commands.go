@@ -157,12 +157,7 @@ func (tb *Bot) handleChatIDCommand(ctx context.Context, b *bot.Bot, update *mode
 		msg.Chat.Type,
 	)
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:          msg.Chat.ID,
-		Text:            text,
-		ParseMode:       models.ParseModeHTML,
-		ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
-	})
+	tb.sendHTML(ctx, b, msg.Chat.ID, text, msg.ID)
 }
 
 // isAdmin checks if a user is an admin/creator in the given chat.

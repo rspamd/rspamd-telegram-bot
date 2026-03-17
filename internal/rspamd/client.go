@@ -61,6 +61,11 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 
 // Check sends a message to Rspamd for scanning via /checkv2.
 func (c *Client) Check(ctx context.Context, msg *TelegramMessage) (*CheckResult, error) {
+	return c.CheckWithSettings(ctx, msg, "")
+}
+
+// CheckWithSettings sends a message to Rspamd with a custom Settings-ID.
+func (c *Client) CheckWithSettings(ctx context.Context, msg *TelegramMessage, settingsID string) (*CheckResult, error) {
 	mimeData, err := BuildMessage(msg)
 	if err != nil {
 		return nil, fmt.Errorf("build message: %w", err)
@@ -72,6 +77,12 @@ func (c *Client) Check(ctx context.Context, msg *TelegramMessage) (*CheckResult,
 	}
 
 	c.setHeaders(req, msg)
+	if settingsID != "" {
+		req.Header.Set("Settings-ID", settingsID)
+	}
+	if msg.Readonly {
+		req.Header.Set("X-Telegram-Readonly", "true")
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

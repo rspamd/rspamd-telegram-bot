@@ -141,6 +141,12 @@ rspamd_config:register_symbol({
   priority = 5,
   description = 'Update Telegram user profile in Redis',
   callback = function(task)
+    -- Skip profile updates for read-only checks (e.g. /check command)
+    if task:get_request_header('X-Telegram-Readonly') then
+      lua_util.debugm(N, task, 'skip profile update: readonly mode')
+      return false
+    end
+
     local user_id = get_header(task, 'X-Telegram-User-Id')
     if not user_id then return false end
 

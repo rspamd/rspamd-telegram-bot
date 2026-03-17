@@ -44,12 +44,7 @@ func (tb *Bot) handleModeratorMessage(ctx context.Context, b *bot.Bot, update *m
 	// Format detailed report
 	text := formatScanReport(tgMsg, result)
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:          msg.Chat.ID,
-		Text:            text,
-		ParseMode:       models.ParseModeHTML,
-		ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
-	})
+	tb.sendHTML(ctx, b, msg.Chat.ID, text, msg.ID)
 }
 
 // handleTrainSpam trains a forwarded message as spam (reply with /trainspam).
@@ -103,6 +98,89 @@ func (tb *Bot) handleTrain(ctx context.Context, b *bot.Bot, update *models.Updat
 		ParseMode:       models.ParseModeHTML,
 		ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
 	})
+}
+
+// handleCheckProfileCommand checks a user's profile through rspamd.
+// Usage: /checkprofile <user_id> or reply to a message with /checkprofile
+func (tb *Bot) handleCheckProfileCommand(ctx context.Context, b *bot.Bot, update *models.Update) {
+	msg := update.Message
+	if msg == nil || msg.Chat.ID != tb.cfg.Telegram.ModeratorChannel {
+		return
+	}
+
+	var targetMsg *rspamd.TelegramMessage
+
+	if msg.ReplyToMessage != nil {
+		// Check the replied-to message
+		targetMsg = buildForwardedMessage(msg.ReplyToMessage)
+		targetMsg.Readonly = true
+	} else {
+		// Try to get user info from argument
+		arg := extractCommandArg(msg.Text, "/checkprofile")
+		if arg == "" {
+			b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:          msg.Chat.ID,
+				Text:            "Usage: /checkprofile <@user or user_id>, or reply to a message",
+				ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
+			})
+			return
+		}
+
+		// Look up user in Redis profile
+		userID := arg
+		if strings.HasPrefix(arg, "@") {
+			username := strings.ToLower(strings.TrimPrefix(arg, "@"))
+			key := fmt.Sprintf("tg_username:%s", username)
+			val, err := tb.redis.Get(ctx, key).Result()
+			if err != nil {
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID:          msg.Chat.ID,
+					Text:            fmt.Sprintf("User @%s not found.", username),
+					ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
+				})
+				return
+			}
+			userID = val
+		}
+
+		// Get profile data from Redis
+		profileKey := fmt.Sprintf("tg_profile:%s", userID)
+		profile, err := tb.redis.HGetAll(ctx, profileKey).Result()
+		if err != nil || len(profile) == 0 {
+			b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:          msg.Chat.ID,
+				Text:            fmt.Sprintf("No profile for user %s.", userID),
+				ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
+			})
+			return
+		}
+
+		// Build a synthetic message with profile data
+		targetMsg = &rspamd.TelegramMessage{
+			Username:    profile["username"],
+			FirstName:   profile["first_name"],
+			LastName:    profile["last_name"],
+			Text:        "(profile check)",
+			MessageType: "text",
+			ChatID:      msg.Chat.ID,
+			ChatTitle:   "profile_check",
+			Readonly:    true,
+		}
+	}
+
+	// Scan with profile-only settings
+	result, err := tb.rspamd.CheckWithSettings(ctx, targetMsg, "telegram_profile_check")
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:          msg.Chat.ID,
+			Text:            fmt.Sprintf("Check failed: %v", err),
+			ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
+		})
+		return
+	}
+
+	text := formatScanReport(targetMsg, result)
+	tb.sendHTML(ctx, b, msg.Chat.ID, text, msg.ID)
 }
 
 // buildForwardedMessage creates a TelegramMessage from a forwarded/moderator message.

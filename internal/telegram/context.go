@@ -124,12 +124,7 @@ func (tb *Bot) handleContextCommand(ctx context.Context, b *bot.Bot, update *mod
 			sb.WriteString(fmt.Sprintf("%s — %d msgs, %d bytes\n  /context %s\n\n",
 				adminEscapeHTML(title), len(c.RecentMessages), len(data), id))
 		}
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID:          msg.Chat.ID,
-			Text:            sb.String(),
-			ParseMode:       models.ParseModeHTML,
-			ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
-		})
+		tb.sendHTML(ctx, b, msg.Chat.ID, sb.String(), msg.ID)
 		return
 	}
 
@@ -186,19 +181,5 @@ func (tb *Bot) handleContextCommand(ctx context.Context, b *bot.Bot, update *mod
 			adminEscapeHTML(strings.Join(chanCtx.KnownSpamPatterns, ", "))))
 	}
 
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:          msg.Chat.ID,
-		Text:            sb.String(),
-		ParseMode:       models.ParseModeHTML,
-		ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
-	})
-	if err != nil {
-		tb.logger.Error("context send failed", "error", err)
-		// Retry without HTML parsing
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID:          msg.Chat.ID,
-			Text:            sb.String(),
-			ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
-		})
-	}
+	tb.sendHTML(ctx, b, msg.Chat.ID, sb.String(), msg.ID)
 }
