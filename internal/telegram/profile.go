@@ -11,6 +11,56 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
+func (tb *Bot) handleDelProfileCommand(ctx context.Context, b *bot.Bot, update *models.Update) {
+	msg := update.Message
+	if msg == nil || msg.Chat.ID != tb.cfg.Telegram.ModeratorChannel {
+		return
+	}
+
+	arg := extractCommandArg(msg.Text, "/delprofile")
+	if arg == "" {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:          msg.Chat.ID,
+			Text:            "Usage: /delprofile <@username or user_id>",
+			ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
+		})
+		return
+	}
+
+	// Resolve user ID
+	userID := arg
+	if strings.HasPrefix(arg, "@") {
+		username := strings.ToLower(strings.TrimPrefix(arg, "@"))
+		key := fmt.Sprintf("tg_username:%s", username)
+		val, err := tb.redis.Get(ctx, key).Result()
+		if err != nil {
+			b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:          msg.Chat.ID,
+				Text:            fmt.Sprintf("User @%s not found.", username),
+				ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
+			})
+			return
+		}
+		userID = val
+	}
+
+	// Delete all profile keys
+	keys := []string{
+		fmt.Sprintf("tg_profile:%s", userID),
+		fmt.Sprintf("tg_profile:%s:messages", userID),
+		fmt.Sprintf("tg_profile:%s:contacts", userID),
+		fmt.Sprintf("tg_profile:%s:channels", userID),
+	}
+
+	deleted, _ := tb.redis.Del(ctx, keys...).Result()
+
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:          msg.Chat.ID,
+		Text:            fmt.Sprintf("Deleted %d keys for user %s.", deleted, userID),
+		ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
+	})
+}
+
 func (tb *Bot) handleUserCommand(ctx context.Context, b *bot.Bot, update *models.Update) {
 	msg := update.Message
 	if msg == nil {
