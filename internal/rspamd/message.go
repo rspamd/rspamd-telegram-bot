@@ -19,6 +19,7 @@ type TelegramMessage struct {
 	FirstName   string
 	LastName    string
 	IsBot       bool
+	IsPremium   bool
 	Text        string
 	MessageType string // text, photo, document, sticker, join, forward
 	HasMedia    bool
@@ -30,6 +31,7 @@ type TelegramMessage struct {
 	IsForward      bool
 	IsAdmin        bool
 	Readonly       bool
+	UserpicRisk    float64 // -1 = not analyzed, 0.0-1.0 = risk score
 	Timestamp      time.Time
 }
 
@@ -68,6 +70,7 @@ func BuildMessage(msg *TelegramMessage) ([]byte, error) {
 		writeHeader(&buf, "X-Telegram-Last-Name", msg.LastName)
 	}
 	writeHeader(&buf, "X-Telegram-Is-Bot", fmt.Sprintf("%t", msg.IsBot))
+	writeHeader(&buf, "X-Telegram-Is-Premium", fmt.Sprintf("%t", msg.IsPremium))
 	writeHeader(&buf, "X-Telegram-Chat-Id", fmt.Sprintf("%d", msg.ChatID))
 	writeHeader(&buf, "X-Telegram-Chat-Title", msg.ChatTitle)
 	writeHeader(&buf, "X-Telegram-Message-Type", msg.MessageType)
@@ -78,6 +81,9 @@ func BuildMessage(msg *TelegramMessage) ([]byte, error) {
 	}
 	writeHeader(&buf, "X-Telegram-Is-Forward", fmt.Sprintf("%t", msg.IsForward))
 	writeHeader(&buf, "X-Telegram-Is-Admin", fmt.Sprintf("%t", msg.IsAdmin))
+	if msg.UserpicRisk >= 0 {
+		writeHeader(&buf, "X-Telegram-Userpic-Risk", fmt.Sprintf("%.2f", msg.UserpicRisk))
+	}
 	if msg.ReplyToUserID != 0 {
 		writeHeader(&buf, "X-Telegram-Reply-To-User-Id", fmt.Sprintf("%d", msg.ReplyToUserID))
 	}

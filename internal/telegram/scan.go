@@ -29,6 +29,17 @@ func (tb *Bot) handleModeratorMessage(ctx context.Context, b *bot.Bot, update *m
 	}
 
 	tgMsg := buildForwardedMessage(msg)
+	tgMsg.UserpicRisk = -1
+
+	// Analyze userpic if we have the original sender
+	if tb.userpic != nil && tb.userpic.Enabled() {
+		if tgMsg.UserID != 0 {
+			tb.analyzeUserpicForce(ctx, tgMsg.UserID, tgMsg)
+		} else {
+			tb.logger.Info("skip userpic: no user ID in forwarded message",
+				"first_name", tgMsg.FirstName)
+		}
+	}
 
 	// Scan with rspamd
 	result, err := tb.rspamd.Check(ctx, tgMsg)
@@ -111,9 +122,22 @@ func (tb *Bot) handleCheckProfileCommand(ctx context.Context, b *bot.Bot, update
 	var targetMsg *rspamd.TelegramMessage
 
 	if msg.ReplyToMessage != nil {
-		// Check the replied-to message
-		targetMsg = buildForwardedMessage(msg.ReplyToMessage)
+		// Check the replied-to message — get real user data
+		target := msg.ReplyToMessage
+		targetMsg = buildForwardedMessage(target)
 		targetMsg.Readonly = true
+		if target.From != nil {
+			targetMsg.UserID = target.From.ID
+			targetMsg.Username = target.From.Username
+			targetMsg.FirstName = target.From.FirstName
+			targetMsg.LastName = target.From.LastName
+			targetMsg.IsPremium = target.From.IsPremium
+
+			// Analyze userpic on demand (force — this is explicit check)
+			if tb.userpic != nil && tb.userpic.Enabled() {
+				tb.analyzeUserpicForce(ctx, target.From.ID, targetMsg)
+			}
+		}
 	} else {
 		// Try to get user info from argument
 		arg := extractCommandArg(msg.Text, "/checkprofile")
@@ -165,6 +189,16 @@ func (tb *Bot) handleCheckProfileCommand(ctx context.Context, b *bot.Bot, update
 			ChatID:      msg.Chat.ID,
 			ChatTitle:   "profile_check",
 			Readonly:    true,
+			UserpicRisk: -1,
+		}
+
+		// Try userpic analysis if we have a numeric user ID
+		if tb.userpic != nil && tb.userpic.Enabled() {
+			var uid int64
+			fmt.Sscanf(userID, "%d", &uid)
+			if uid != 0 {
+				tb.analyzeUserpicForce(ctx, uid, targetMsg)
+			}
 		}
 	}
 
@@ -247,6 +281,16 @@ func formatScanReport(msg *rspamd.TelegramMessage, result *rspamd.CheckResult) s
 			sb.WriteString(fmt.Sprintf(" (@%s)", adminEscapeHTML(msg.Username)))
 		}
 		sb.WriteString("\n")
+	}
+
+	// Premium flag
+	if msg.IsPremium {
+		sb.WriteString("<b>Premium:</b> yes\n")
+	}
+
+	// Userpic risk
+	if msg.UserpicRisk >= 0 {
+		sb.WriteString(fmt.Sprintf("<b>Userpic risk:</b> %.2f\n", msg.UserpicRisk))
 	}
 
 	// Score and action

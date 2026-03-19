@@ -16,6 +16,7 @@ import (
 	"github.com/vstakhov/rspamd-telegram-bot/internal/moderator"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/rspamd"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/storage"
+	"github.com/vstakhov/rspamd-telegram-bot/internal/userpic"
 )
 
 // Bot wraps the Telegram bot with spam-checking capabilities.
@@ -26,6 +27,7 @@ type Bot struct {
 	storage  *storage.Client
 	reporter *moderator.Reporter
 	maps     *maps.Manager
+	userpic  *userpic.Analyzer
 	redis    *redis.Client
 	logger   *slog.Logger
 	chatSet  map[int64]bool
@@ -48,12 +50,13 @@ type adminCacheEntry struct {
 const adminCacheTTL = 5 * time.Minute
 
 // New creates and configures a new Telegram bot.
-func New(ctx context.Context, cfg *config.Config, rspamdClient *rspamd.Client, storageClient *storage.Client, mapsManager *maps.Manager, redisClient *redis.Client, logger *slog.Logger) (*Bot, error) {
+func New(ctx context.Context, cfg *config.Config, rspamdClient *rspamd.Client, storageClient *storage.Client, mapsManager *maps.Manager, userpicAnalyzer *userpic.Analyzer, redisClient *redis.Client, logger *slog.Logger) (*Bot, error) {
 	tb := &Bot{
 		cfg:        cfg,
 		rspamd:     rspamdClient,
 		storage:    storageClient,
 		maps:       mapsManager,
+		userpic:    userpicAnalyzer,
 		redis:      redisClient,
 		logger:     logger,
 		chatSet:    make(map[int64]bool),

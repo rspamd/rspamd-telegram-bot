@@ -184,3 +184,26 @@ rspamd_config:register_symbol({
     return false
   end,
 })
+
+-- Userpic risk from bot-side vision analysis
+rspamd_config:register_symbol({
+  name = 'TELEGRAM_SUSPECT_USERPIC',
+  score = 5.0,
+  group = 'telegram',
+  description = 'Suspicious profile picture (vision analysis)',
+  callback = function(task)
+    if task:has_symbol('TELEGRAM_USER_REPUTATION') then
+      return false
+    end
+
+    local risk = get_header(task, 'X-Telegram-Userpic-Risk')
+    if not risk then return false end
+
+    local risk_score = tonumber(risk)
+    if not risk_score or risk_score < 0.5 then
+      return false
+    end
+
+    return true, risk_score, string.format('userpic risk: %.2f', risk_score)
+  end,
+})

@@ -14,6 +14,7 @@ import (
 	"github.com/vstakhov/rspamd-telegram-bot/internal/rspamd"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/storage"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/telegram"
+	"github.com/vstakhov/rspamd-telegram-bot/internal/userpic"
 )
 
 func main() {
@@ -70,8 +71,20 @@ func main() {
 	defer redisClient.Close()
 	logger.Info("connected to Redis", "addr", cfg.Redis.Addr)
 
+	// Initialize userpic analyzer (uses OpenRouter vision API)
+	var userpicAnalyzer *userpic.Analyzer
+	if apiKey := os.Getenv("OPENROUTER_API_KEY"); apiKey != "" {
+		userpicAnalyzer = userpic.NewAnalyzer(
+			apiKey,
+			os.Getenv("OPENROUTER_VISION_MODEL"),
+			"",
+			logger,
+		)
+		logger.Info("userpic analyzer enabled")
+	}
+
 	// Initialize Telegram bot
-	bot, err := telegram.New(ctx, cfg, rspamdClient, store, mapsManager, redisClient, logger)
+	bot, err := telegram.New(ctx, cfg, rspamdClient, store, mapsManager, userpicAnalyzer, redisClient, logger)
 	if err != nil {
 		logger.Error("failed to create telegram bot", "error", err)
 		os.Exit(1)

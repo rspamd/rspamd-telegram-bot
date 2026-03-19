@@ -70,3 +70,13 @@ describe TG_SPAMMER_PROFILE_GIBBERISH Both first and last name are gibberish
 meta TG_SPAMMER_PROFILE_RANDOM TG_USERNAME_RANDOM && (TG_NAME_ENCLOSED_ALPHA || TG_NAME_MATH_FONT || TG_NAME_GIBBERISH)
 score TG_SPAMMER_PROFILE_RANDOM 5.0
 describe TG_SPAMMER_PROFILE_RANDOM Random username combined with suspicious display name
+
+# Premium account flags (not spam by itself, but amplifies other signals)
+header TG_IS_PREMIUM X-Telegram-Is-Premium =~ /^true$/
+score TG_IS_PREMIUM 0.0
+describe TG_IS_PREMIUM User has Telegram Premium (informational)
+
+# Premium + suspicious profile = likely paid spam account
+meta TG_PREMIUM_SPAMMER TG_IS_PREMIUM && (TG_NAME_ENCLOSED_ALPHA || TG_NAME_MATH_FONT || TG_SPAMMER_PROFILE_GIBBERISH || TG_NAME_EMOJI_ONLY)
+score TG_PREMIUM_SPAMMER 3.0
+describe TG_PREMIUM_SPAMMER Premium account with suspicious profile (paid spam account)

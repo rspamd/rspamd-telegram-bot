@@ -5,6 +5,7 @@
 local rspamd_logger = require "rspamd_logger"
 local lua_redis = require "lua_redis"
 local lua_util = require "lua_util"
+local lua_mime = require "lua_mime"
 
 local N = "telegram"
 local redis_params
@@ -62,6 +63,11 @@ rspamd_config:register_symbol({
   group = 'telegram',
   description = 'New user posting URLs',
   callback = function(task)
+    -- Skip if user already has reputation
+    if task:has_symbol('TELEGRAM_USER_REPUTATION') then
+      return false
+    end
+
     local user_id = get_header(task, 'X-Telegram-User-Id')
     if not user_id then return false end
     if not has_urls(task) then return false end
@@ -177,47 +183,6 @@ rspamd_config:register_symbol({
   end,
 })
 
--- TELEGRAM_CRYPTO_SPAM: crypto/investment spam patterns in text
-rspamd_config:register_symbol({
-  name = 'TELEGRAM_CRYPTO_SPAM',
-  score = 7.0,
-  group = 'telegram',
-  description = 'Crypto/investment spam patterns',
-  callback = function(task)
-    local content = task:get_content()
-    if not content then return false end
-
-    local text = tostring(content):lower()
-
-    local crypto_patterns = {
-      'guaranteed profit',
-      'daily returns',
-      'invest.*minimum',
-      'bitcoin.*opportunity',
-      'crypto.*signal',
-      'forex.*trading.*group',
-      'earn.*%d+.*daily',
-      'whatsapp.*%+%d',
-      'telegram.*t%.me',
-      'mining.*pool',
-      'wallet.*connect',
-    }
-
-    local matches = {}
-    for _, pattern in ipairs(crypto_patterns) do
-      if text:find(pattern) then
-        table.insert(matches, pattern)
-      end
-    end
-
-    if #matches > 0 then
-      return true, math.min(#matches / 2, 1.0), table.concat(matches, ', ')
-    end
-
-    return false
-  end,
-})
-
 -- TELEGRAM_SHORT_FIRST_MSG: very short first message from new user with link
 rspamd_config:register_symbol({
   name = 'TELEGRAM_SHORT_FIRST_MSG',
@@ -225,14 +190,18 @@ rspamd_config:register_symbol({
   group = 'telegram',
   description = 'Short first message from new user with link',
   callback = function(task)
+    if task:has_symbol('TELEGRAM_USER_REPUTATION') then
+      return false
+    end
+
     local user_id = get_header(task, 'X-Telegram-User-Id')
     if not user_id then return false end
     if not has_urls(task) then return false end
 
-    local content = task:get_content()
-    if not content then return false end
-    local text = tostring(content)
-    if #text > 100 then return false end
+    local sel_part = lua_mime.get_displayed_text_part(task)
+    if not sel_part then return false end
+    local wc = sel_part:get_words_count() or 0
+    if wc > 5 then return false end
 
     local profile_key = string.format("tg_profile:%s", user_id)
 

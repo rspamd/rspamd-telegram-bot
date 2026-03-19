@@ -339,6 +339,11 @@ func formatProfileReport(userID string, profile map[string]string, messages []st
 	}
 	sb.WriteString("\n")
 
+	// Userpic analysis
+	if pic := profile["userpic_analysis"]; pic != "" {
+		sb.WriteString(fmt.Sprintf("\n<b>Userpic analysis:</b>\n<code>%s</code>\n", adminEscapeHTML(pic)))
+	}
+
 	// GPT verdict
 	if gptVerdict := profile["gpt_verdict"]; gptVerdict != "" {
 		sb.WriteString(fmt.Sprintf("\n<b>GPT verdict:</b>\n<code>%s</code>\n", adminEscapeHTML(gptVerdict)))

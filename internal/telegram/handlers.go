@@ -48,6 +48,12 @@ func (tb *Bot) handleUpdate(ctx context.Context, b *bot.Bot, update *models.Upda
 func (tb *Bot) processMessage(ctx context.Context, msg *models.Message) {
 	tgMsg := buildTelegramMessage(msg)
 	tgMsg.IsAdmin = tb.isAdminCached(ctx, tb.bot, msg.Chat.ID, msg.From.ID)
+	tgMsg.UserpicRisk = -1 // not analyzed by default
+
+	// Check userpic for new users (no profile in Redis yet)
+	if tb.userpic != nil && tb.userpic.Enabled() && msg.From != nil {
+		tb.analyzeUserpicIfNew(ctx, msg.From, tgMsg)
+	}
 
 	// Scan with Rspamd
 	result, err := tb.rspamd.Check(ctx, tgMsg)
@@ -159,6 +165,7 @@ func buildTelegramMessage(msg *models.Message) *rspamd.TelegramMessage {
 		FirstName:   msg.From.FirstName,
 		LastName:    msg.From.LastName,
 		IsBot:       msg.From.IsBot,
+		IsPremium:   msg.From.IsPremium,
 		Text:        getMessageHTML(msg),
 		MessageType: getMessageType(msg),
 		HasMedia:    msg.Photo != nil || msg.Document != nil || msg.Sticker != nil,
