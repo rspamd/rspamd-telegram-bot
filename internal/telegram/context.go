@@ -97,10 +97,10 @@ func (tb *Bot) handleContextCommand(ctx context.Context, b *bot.Bot, update *mod
 		return
 	}
 
-	chatID := extractCommandArg(msg.Text, "/context")
+	chatIDArg := extractCommandArg(msg.Text, "/context")
 
 	// No argument — list all contexts
-	if chatID == "" {
+	if chatIDArg == "" {
 		keys, _ := tb.redis.Keys(ctx, "tg_channel_ctx:*").Result()
 		if len(keys) == 0 {
 			b.SendMessage(ctx, &bot.SendMessageParams{
@@ -128,6 +128,16 @@ func (tb *Bot) handleContextCommand(ctx context.Context, b *bot.Bot, update *mod
 		return
 	}
 
+	channelID, err := tb.resolveChannelID(ctx, chatIDArg)
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:          msg.Chat.ID,
+			Text:            fmt.Sprintf("Channel not found: %v", err),
+			ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
+		})
+		return
+	}
+	chatID := fmt.Sprintf("%d", channelID)
 	key := fmt.Sprintf("tg_channel_ctx:%s", chatID)
 	data, err := tb.redis.Get(ctx, key).Bytes()
 	if err != nil {

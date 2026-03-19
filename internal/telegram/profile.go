@@ -195,15 +195,26 @@ func (tb *Bot) handleUsersCommand(ctx context.Context, b *bot.Bot, update *model
 		return
 	}
 
-	chatID := extractCommandArg(msg.Text, "/users")
-	if chatID == "" {
+	chatIDArg := extractCommandArg(msg.Text, "/users")
+	if chatIDArg == "" {
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:          msg.Chat.ID,
-			Text:            "Usage: /users <channel_id>",
+			Text:            "Usage: /users <channel>",
 			ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
 		})
 		return
 	}
+
+	channelID, err := tb.resolveChannelID(ctx, chatIDArg)
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:          msg.Chat.ID,
+			Text:            fmt.Sprintf("Channel not found: %v", err),
+			ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
+		})
+		return
+	}
+	chatID := fmt.Sprintf("%d", channelID)
 
 	// Get top users in channel sorted by message count (descending)
 	usersKey := fmt.Sprintf("tg_channel:%s:users", chatID)
@@ -338,6 +349,15 @@ func formatProfileReport(userID string, profile map[string]string, messages []st
 		sb.WriteString(fmt.Sprintf(" + admin bonus (-%d.0)", bonus))
 	}
 	sb.WriteString("\n")
+
+	// Quiz result
+	if qr := profile["quiz_result"]; qr != "" {
+		sb.WriteString(fmt.Sprintf("\n<b>Quiz:</b> %s", adminEscapeHTML(qr)))
+		if reason := profile["quiz_reason"]; reason != "" {
+			sb.WriteString(fmt.Sprintf(" — %s", adminEscapeHTML(reason)))
+		}
+		sb.WriteString("\n")
+	}
 
 	// Userpic analysis
 	if pic := profile["userpic_analysis"]; pic != "" {

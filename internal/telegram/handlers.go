@@ -19,6 +19,12 @@ func (tb *Bot) handleUpdate(ctx context.Context, b *bot.Bot, update *models.Upda
 
 	msg := update.Message
 
+	// Handle private messages (quiz answers)
+	if msg.Chat.Type == "private" {
+		tb.handlePrivateMessage(ctx, b, update)
+		return
+	}
+
 	// Handle forwarded messages in moderator channel (auto-scan)
 	if msg.Chat.ID == tb.cfg.Telegram.ModeratorChannel && msg.ForwardOrigin != nil {
 		tb.handleModeratorMessage(ctx, b, update)
@@ -149,6 +155,14 @@ func (tb *Bot) handleNewMembers(ctx context.Context, msg *models.Message) {
 					"user_id", member.ID,
 					"error", err,
 				)
+			}
+		}
+
+		// Trigger quiz on join if configured for this channel
+		if tb.quiz != nil && !member.IsBot {
+			cfg, err := tb.quiz.GetConfig(ctx, msg.Chat.ID)
+			if err == nil && cfg.Mode == "all" {
+				tb.TriggerQuiz(ctx, tb.bot, msg.Chat.ID, &member)
 			}
 		}
 	}

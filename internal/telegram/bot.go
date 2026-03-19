@@ -16,6 +16,7 @@ import (
 	"github.com/vstakhov/rspamd-telegram-bot/internal/moderator"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/rspamd"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/storage"
+	"github.com/vstakhov/rspamd-telegram-bot/internal/quiz"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/userpic"
 )
 
@@ -28,6 +29,8 @@ type Bot struct {
 	reporter *moderator.Reporter
 	maps     *maps.Manager
 	userpic  *userpic.Analyzer
+	quiz     *quiz.Manager
+	quizLLM  *quiz.LLM
 	redis    *redis.Client
 	logger   *slog.Logger
 	chatSet  map[int64]bool
@@ -50,13 +53,15 @@ type adminCacheEntry struct {
 const adminCacheTTL = 5 * time.Minute
 
 // New creates and configures a new Telegram bot.
-func New(ctx context.Context, cfg *config.Config, rspamdClient *rspamd.Client, storageClient *storage.Client, mapsManager *maps.Manager, userpicAnalyzer *userpic.Analyzer, redisClient *redis.Client, logger *slog.Logger) (*Bot, error) {
+func New(ctx context.Context, cfg *config.Config, rspamdClient *rspamd.Client, storageClient *storage.Client, mapsManager *maps.Manager, userpicAnalyzer *userpic.Analyzer, quizManager *quiz.Manager, quizLLM *quiz.LLM, redisClient *redis.Client, logger *slog.Logger) (*Bot, error) {
 	tb := &Bot{
 		cfg:        cfg,
 		rspamd:     rspamdClient,
 		storage:    storageClient,
 		maps:       mapsManager,
 		userpic:    userpicAnalyzer,
+		quiz:       quizManager,
+		quizLLM:    quizLLM,
 		redis:      redisClient,
 		logger:     logger,
 		chatSet:    make(map[int64]bool),
@@ -82,6 +87,7 @@ func New(ctx context.Context, cfg *config.Config, rspamdClient *rspamd.Client, s
 	// Utility commands (work in any chat)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/chatid", bot.MatchTypePrefix, tb.handleChatIDCommand)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypePrefix, tb.handleHelpCommand)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/start quiz_", bot.MatchTypePrefix, tb.handleStartCommand)
 
 	// Register command handlers for monitored chats
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/spam", bot.MatchTypePrefix, tb.handleSpamCommand)
@@ -100,6 +106,7 @@ func New(ctx context.Context, cfg *config.Config, rspamdClient *rspamd.Client, s
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/context", bot.MatchTypePrefix, tb.handleContextCommand)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/users", bot.MatchTypePrefix, tb.handleUsersCommand)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/checkprofile", bot.MatchTypePrefix, tb.handleCheckProfileCommand)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/quiz", bot.MatchTypePrefix, tb.handleQuizCommand)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/trainspam", bot.MatchTypePrefix, tb.handleTrainSpam)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/trainham", bot.MatchTypePrefix, tb.handleTrainHam)
 

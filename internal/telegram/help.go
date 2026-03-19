@@ -43,6 +43,12 @@ func (tb *Bot) handleHelpCommand(ctx context.Context, b *bot.Bot, update *models
 	sb.WriteString("/context [channel_id] — show channel context for GPT\n")
 	sb.WriteString("/checkprofile @user or ID — run profile analysis through rspamd\n")
 
+	sb.WriteString("\n<b>Quiz system:</b>\n")
+	sb.WriteString("/quiz prompt &lt;ch_id&gt; &lt;text&gt; — set LLM prompt for questions\n")
+	sb.WriteString("/quiz message &lt;ch_id&gt; &lt;text&gt; — set channel notification ({link}, {user})\n")
+	sb.WriteString("/quiz show &lt;ch_id&gt; — show config\n")
+	sb.WriteString("/quiz test &lt;ch_id&gt; — test quiz flow\n")
+
 	sb.WriteString("\n<b>Rule management:</b>\n")
 	sb.WriteString("/addregexp &lt;pattern&gt; — add regexp spam rule\n")
 	sb.WriteString("/delregexp &lt;pattern&gt; — remove regexp rule\n")

@@ -106,7 +106,7 @@ return 1
 
 -- Redis script: fetch profile for reputation check
 -- KEYS[1] = profile_key
--- Returns: {first_seen, msg_count, admin_replies} or nil
+-- Returns: {first_seen, msg_count, admin_replies, quiz_result} or nil
 local reputation_check_script = [[
 local profile_key = KEYS[1]
 local first_seen = redis.call('HGET', profile_key, 'first_seen')
@@ -115,7 +115,8 @@ if not first_seen then
 end
 local msg_count = redis.call('HGET', profile_key, 'msg_count') or '0'
 local admin_replies = redis.call('HGET', profile_key, 'admin_replies') or '0'
-return {first_seen, msg_count, admin_replies}
+local quiz_result = redis.call('HGET', profile_key, 'quiz_result') or ''
+return {first_seen, msg_count, admin_replies, quiz_result}
 ]]
 
 -- Init: parse redis params and register scripts
@@ -250,7 +251,13 @@ rspamd_config:register_symbol({
         if not first_seen then return end
         local msg_count = tonumber(data[2]) or 0
         local admin_replies = tonumber(data[3]) or 0
+        local quiz_result = data[4] and tostring(data[4]) or ''
         local age_days = (os.time() - first_seen) / 86400
+
+        -- Quiz failed → spam signal (separate symbol)
+        if quiz_result == 'fail' then
+          task:insert_result('TELEGRAM_QUIZ_FAILED', 1.0, 'quiz verification failed')
+        end
 
         local weight = 0.0
 
@@ -270,10 +277,15 @@ rspamd_config:register_symbol({
         local admin_bonus = math.min(admin_replies, 3)
         weight = weight + admin_bonus
 
+        -- Quiz passed: +2.0 bonus
+        if quiz_result == 'pass' then
+          weight = weight + 2
+        end
+
         if weight > 0 then
           task:insert_result('TELEGRAM_USER_REPUTATION', weight,
-            string.format('age:%.0fd msgs:%d admin_ok:%d',
-              age_days, msg_count, admin_replies))
+            string.format('age:%.0fd msgs:%d admin_ok:%d quiz:%s',
+              age_days, msg_count, admin_replies, quiz_result ~= '' and quiz_result or 'none'))
         end
       end,
       { profile_key },

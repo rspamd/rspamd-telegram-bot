@@ -13,6 +13,7 @@ import (
 	"github.com/vstakhov/rspamd-telegram-bot/internal/maps"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/rspamd"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/storage"
+	"github.com/vstakhov/rspamd-telegram-bot/internal/quiz"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/telegram"
 	"github.com/vstakhov/rspamd-telegram-bot/internal/userpic"
 )
@@ -83,8 +84,17 @@ func main() {
 		logger.Info("userpic analyzer enabled")
 	}
 
+	// Initialize quiz system
+	var quizManager *quiz.Manager
+	var quizLLM *quiz.LLM
+	if apiKey := os.Getenv("OPENROUTER_API_KEY"); apiKey != "" {
+		quizManager = quiz.NewManager(redisClient, logger)
+		quizLLM = quiz.NewLLM(apiKey, os.Getenv("OPENROUTER_MODEL"), "")
+		logger.Info("quiz system enabled")
+	}
+
 	// Initialize Telegram bot
-	bot, err := telegram.New(ctx, cfg, rspamdClient, store, mapsManager, userpicAnalyzer, redisClient, logger)
+	bot, err := telegram.New(ctx, cfg, rspamdClient, store, mapsManager, userpicAnalyzer, quizManager, quizLLM, redisClient, logger)
 	if err != nil {
 		logger.Error("failed to create telegram bot", "error", err)
 		os.Exit(1)
