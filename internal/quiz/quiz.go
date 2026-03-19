@@ -195,6 +195,21 @@ func (m *Manager) SetChannelMessageID(ctx context.Context, token string, message
 	return m.UpdateSession(ctx, session)
 }
 
+// TrackQuestion stores a question in the recent questions list for a channel.
+func (m *Manager) TrackQuestion(ctx context.Context, channelID int64, question string) {
+	key := fmt.Sprintf("tg_quiz:%d:recent_questions", channelID)
+	m.redis.LPush(ctx, key, question)
+	m.redis.LTrim(ctx, key, 0, 19) // keep last 20
+	m.redis.Expire(ctx, key, 7*24*time.Hour)
+}
+
+// RecentQuestions returns the last N questions asked in a channel.
+func (m *Manager) RecentQuestions(ctx context.Context, channelID int64) []string {
+	key := fmt.Sprintf("tg_quiz:%d:recent_questions", channelID)
+	questions, _ := m.redis.LRange(ctx, key, 0, 19).Result()
+	return questions
+}
+
 func generateToken() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

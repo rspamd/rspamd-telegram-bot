@@ -50,14 +50,25 @@ func NewLLM(apiKey, models, apiURL string) *LLM {
 }
 
 // GenerateQuestion generates a quiz question using the channel prompt.
-func (l *LLM) GenerateQuestion(ctx context.Context, channelPrompt string) (string, error) {
+// recentQuestions contains previously asked questions to avoid repetition.
+func (l *LLM) GenerateQuestion(ctx context.Context, channelPrompt string, recentQuestions []string) (string, error) {
+	systemPrompt := "You generate a single short quiz question for a Telegram channel. " +
+		"The question should be easy for a real member but hard for a spam bot. " +
+		"Reply with ONLY the question text, nothing else. " +
+		"The question should be in the same language as the channel prompt. " +
+		"Be creative and vary the topics — ask about different aspects each time."
+
+	if len(recentQuestions) > 0 {
+		systemPrompt += "\n\nDO NOT repeat or rephrase these recently asked questions:\n"
+		for _, q := range recentQuestions {
+			systemPrompt += "- " + q + "\n"
+		}
+	}
+
 	messages := []map[string]string{
 		{
-			"role": "system",
-			"content": "You generate a single short quiz question for a Telegram channel. " +
-				"The question should be easy for a real member but hard for a spam bot. " +
-				"Reply with ONLY the question text, nothing else. " +
-				"The question should be in the same language as the channel prompt.",
+			"role":    "system",
+			"content": systemPrompt,
 		},
 		{
 			"role":    "user",

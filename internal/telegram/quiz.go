@@ -298,7 +298,8 @@ func (tb *Bot) handleQuizTest(ctx context.Context, b *bot.Bot, msg *models.Messa
 		Text:   "Generating quiz question...",
 	})
 
-	question, err := tb.quizLLM.GenerateQuestion(ctx, cfg.Prompt)
+	recentQs := tb.quiz.RecentQuestions(ctx, channelID)
+	question, err := tb.quizLLM.GenerateQuestion(ctx, cfg.Prompt, recentQs)
 	if err != nil {
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:          msg.Chat.ID,
@@ -307,6 +308,8 @@ func (tb *Bot) handleQuizTest(ctx context.Context, b *bot.Bot, msg *models.Messa
 		})
 		return
 	}
+
+	tb.quiz.TrackQuestion(ctx, channelID, question)
 
 	// Create test session (user = sender for testing)
 	token, err := tb.quiz.CreateSession(ctx, msg.From.ID, channelID, question)
@@ -398,7 +401,8 @@ func (tb *Bot) handleStartCommand(ctx context.Context, b *bot.Bot, update *model
 			Text:   "Generating your question...",
 		})
 
-		question, err := tb.quizLLM.GenerateQuestion(ctx, cfg.Prompt)
+		recentQs := tb.quiz.RecentQuestions(ctx, session.ChannelID)
+		question, err := tb.quizLLM.GenerateQuestion(ctx, cfg.Prompt, recentQs)
 		if err != nil {
 			tb.logger.Error("quiz question generation failed", "error", err)
 			b.SendMessage(ctx, &bot.SendMessageParams{
@@ -410,6 +414,7 @@ func (tb *Bot) handleStartCommand(ctx context.Context, b *bot.Bot, update *model
 
 		session.Question = question
 		tb.quiz.UpdateSession(ctx, session)
+		tb.quiz.TrackQuestion(ctx, session.ChannelID, question)
 	}
 
 	// Send the question
