@@ -8,28 +8,40 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 // LLM handles question generation and answer evaluation.
 type LLM struct {
 	apiKey     string
-	model      string
+	models     []string
+	counter    uint64
 	apiURL     string
 	httpClient *http.Client
 }
 
 // NewLLM creates a new LLM client for quiz operations.
-func NewLLM(apiKey, model, apiURL string) *LLM {
+// models is a comma-separated list; first is primary, rest are rotated.
+func NewLLM(apiKey, models, apiURL string) *LLM {
 	if apiURL == "" {
 		apiURL = "https://openrouter.ai/api/v1/chat/completions"
 	}
-	if model == "" {
-		model = "google/gemini-2.0-flash-001"
+
+	modelList := []string{}
+	for _, m := range strings.Split(models, ",") {
+		m = strings.TrimSpace(m)
+		if m != "" {
+			modelList = append(modelList, m)
+		}
 	}
+	if len(modelList) == 0 {
+		modelList = []string{"google/gemini-2.0-flash-001"}
+	}
+
 	return &LLM{
 		apiKey: apiKey,
-		model:  model,
+		models: modelList,
 		apiURL: apiURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -99,9 +111,16 @@ func (l *LLM) EvaluateAnswer(ctx context.Context, question, answer, channelPromp
 	return "fail", reason, nil
 }
 
+// nextModel returns the next model in rotation.
+func (l *LLM) nextModel() string {
+	idx := atomic.AddUint64(&l.counter, 1)
+	return l.models[int(idx)%len(l.models)]
+}
+
 func (l *LLM) chat(ctx context.Context, messages []map[string]string) (string, error) {
+	model := l.nextModel()
 	reqBody := map[string]interface{}{
-		"model":      l.model,
+		"model":      model,
 		"messages":   messages,
 		"max_tokens": 300,
 	}

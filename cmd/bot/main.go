@@ -89,7 +89,11 @@ func main() {
 	var quizLLM *quiz.LLM
 	if apiKey := os.Getenv("OPENROUTER_API_KEY"); apiKey != "" {
 		quizManager = quiz.NewManager(redisClient, logger)
-		quizLLM = quiz.NewLLM(apiKey, os.Getenv("OPENROUTER_MODEL"), "")
+		quizModels := os.Getenv("QUIZ_MODELS")
+		if quizModels == "" {
+			quizModels = os.Getenv("OPENROUTER_MODEL")
+		}
+		quizLLM = quiz.NewLLM(apiKey, quizModels, "")
 		logger.Info("quiz system enabled")
 	}
 
