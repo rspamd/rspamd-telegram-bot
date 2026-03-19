@@ -1,76 +1,98 @@
 # Rspamd Telegram Bot
 
-A Telegram bot that monitors group chats for spam using [Rspamd](https://rspamd.com) as the scanning engine. Messages are converted to RFC 2822 MIME format with Telegram metadata in custom headers, scanned via the Rspamd HTTP API, and results are logged to a moderator channel.
+A Telegram bot that monitors group chats for spam using [Rspamd](https://rspamd.com) as the scanning engine. Combines neural network classification, LLM-based analysis (GPT), user profiling, profile photo analysis, and quiz verification for new users.
 
 ## Architecture
 
 ```
 Telegram → Go Bot → Rspamd (HTTP /checkv2) → verdict
-                  → ClickHouse (store messages + results)
-                  → Moderator Channel (spam alerts + admin commands)
+                  → ClickHouse (store messages + scan results)
+                  → Moderator Channel (spam reports + admin commands)
+                  → OpenRouter (GPT spam check + userpic analysis + quiz)
 
-Bot ↔ Redis ↔ Rspamd (shared: bayes, fuzzy, neural, maps)
-    ↔ Shared Maps Volume (admin-managed regexp/URL rules)
+Bot ↔ Redis ↔ Rspamd (shared: neural, fuzzy, user profiles, channel context)
 ```
 
 ### Components
 
 | Service | Role |
 |---------|------|
-| **Bot** | Go binary — receives Telegram updates via long polling, converts messages to MIME, sends to Rspamd |
-| **Rspamd** | Spam scanner with custom Telegram-specific Lua rules and multimap filters |
-| **Redis** | Shared state between bot and Rspamd (Bayes, fuzzy hashes, neural network, user tracking) |
-| **ClickHouse** | Persistent storage for all messages and scan results |
+| **Bot** | Go binary — long polling, MIME message builder, user profiling, quiz system |
+| **Rspamd** | Spam scanner — neural network, SA regexp rules, multimap, GPT module, custom Lua plugins |
+| **Redis** | Shared state — user profiles, neural training data, channel context, quiz sessions |
+| **ClickHouse** | Persistent storage — message history, Rspamd scan results (via Rspamd plugin) |
+| **OpenRouter** | LLM API — GPT spam classification, userpic vision analysis, quiz Q&A |
 
 ## Features
 
-- Scans all messages in monitored chats through Rspamd
-- Custom Lua rules for Telegram-specific spam patterns (crypto spam, new user links, join floods, suspicious names)
-- Multimap rules for regexp patterns, URLs, and known spammer user IDs
-- Bayes + fuzzy hash training via `/spam` and `/ham` commands
-- Admin-managed regexp and URL rules via bot commands in the moderator channel
-- Spam reports with score breakdown sent to the moderator channel
-- Full message history and scan results stored in ClickHouse
+### Spam Detection
+- **Neural network** with FastText embeddings (per-language models)
+- **GPT/LLM classification** for first-time users with channel context
+- **SA regexp rules** — 300+ rules extracted from real antispam bot logs
+- **Profile analysis** — detect Unicode font abuse, random usernames, spam emoji
+- **Userpic analysis** — vision LLM detects stock photos, fake profiles
+- **Multimap** — URL blocklist, user ID blocklist, regexp patterns
+- **Chartable** — mixed charset / homoglyph detection
+- **Fuzzy hashing** — catch variations of known spam
+
+### User Profiling
+- Track first seen, message count, contacts, channels per user
+- Admin endorsement (reply from admin = reputation boost)
+- Reputation system: new → known → active → established
+- GPT verdict and userpic analysis cached in profile
+
+### Quiz Verification
+- Per-channel LLM-generated questions for suspicious or all new users
+- Deep link flow: channel notification → private chat → answer → LLM evaluation
+- Lazy question generation (only when user clicks link)
+- 1 minute timeout → auto-fail + ban
+- Mode: `suspicious` (triggered by spam signals) or `all` (every join)
+
+### Admin Tools
+- Forward message to moderator channel → auto-scan with full report
+- `/trainspam`, `/trainham` — train neural on forwarded messages
+- `/checkprofile` — run profile analysis on any user
+- `/userinfo` — full profile dump (reputation, quiz result, userpic, GPT verdict)
+- `/addregexp`, `/addurl` — manage spam rules live
 
 ## Quick Start
 
 ### Prerequisites
 
 - Docker and Docker Compose
-- A Telegram bot token (from [@BotFather](https://t.me/BotFather))
+- Telegram bot token (from [@BotFather](https://t.me/BotFather))
+- OpenRouter API key (for GPT/vision features, optional)
 
 ### Setup
 
-1. Clone the repository:
+1. Clone and configure:
    ```bash
    git clone https://github.com/vstakhov/rspamd-telegram-bot.git
    cd rspamd-telegram-bot
-   ```
-
-2. Create configuration files from examples:
-   ```bash
    cp .env.example .env
    cp config.example.yml config.yml
    ```
 
-3. Edit `.env` with your secrets:
+2. Edit `.env`:
    ```
-   BOT_TOKEN=your_telegram_bot_token_here
-   RSPAMD_PASSWORD=your_rspamd_controller_password
+   BOT_TOKEN=your_telegram_bot_token
+   RSPAMD_PASSWORD=your_rspamd_password
+   OPENROUTER_API_KEY=sk-or-...
+   OPENROUTER_MODEL=google/gemini-2.0-flash-001
+   OPENROUTER_VISION_MODEL=google/gemini-2.0-flash-001
    ```
 
-4. To discover chat IDs, start the bot and use `/chatid` in any chat:
+3. Discover chat IDs — start the bot, add to groups, use `/chatid`:
    ```bash
    docker compose up -d
    ```
-   Add the bot to your groups/channels, send `/chatid`, then update `config.yml`:
+
+4. Update `config.yml` with chat IDs and restart:
    ```yaml
    telegram:
-     monitored_chats: [-1001234567890]    # chats to scan
-     moderator_channel: -1009876543210    # spam reports + admin commands
+     monitored_chats: [-1001234567890]
+     moderator_channel: -1009876543210
    ```
-
-5. Restart after updating config:
    ```bash
    docker compose restart bot
    ```
@@ -81,44 +103,77 @@ Bot ↔ Redis ↔ Rspamd (shared: bayes, fuzzy, neural, maps)
 
 | Command | Description |
 |---------|-------------|
-| `/chatid` | Show the current chat's ID (for setting up config) |
+| `/chatid` | Show current chat ID |
+| `/help` | List all commands + rspamd version |
 
-### In monitored chats (admin-only)
-
-| Command | Description |
-|---------|-------------|
-| `/spam` | Reply to a message to train it as spam (Bayes + fuzzy hash) |
-| `/ham` | Reply to a message to train it as ham (Bayes + remove fuzzy hash) |
-
-### In moderator channel
+### Monitored chats (admin-only)
 
 | Command | Description |
 |---------|-------------|
-| `/addregexp <pattern>` | Add a regexp pattern to the spam filter |
-| `/delregexp <pattern>` | Remove a regexp pattern |
-| `/listregexp` | List all configured regexp patterns |
-| `/addurl <domain_or_url>` | Add a URL/domain to the spam URL list |
-| `/delurl <domain_or_url>` | Remove a URL/domain |
-| `/listurls` | List all configured URL rules |
+| `/spam` | Reply to train as spam (neural + fuzzy) |
+| `/ham` | Reply to train as ham |
 
-Regexp patterns use Rspamd format: `/pattern/flags` (e.g., `/crypto.*invest.*profit/i`) or plain text patterns.
+### Moderator channel
 
-Changes take effect automatically — Rspamd watches map files for modifications.
+| Command | Description |
+|---------|-------------|
+| Forward a message | Auto-scan with full symbol report + userpic analysis |
+| `/trainspam` | Reply to forwarded → train neural as spam + add fuzzy hash |
+| `/trainham` | Reply to forwarded → train neural as ham |
+| `/checkprofile <@user\|ID>` | Run profile analysis through rspamd |
+| `/userinfo <@user\|ID>` | Show full user profile |
+| `/delprofile <@user\|ID>` | Delete user profile (for testing) |
+| `/channels` | List tracked channels |
+| `/users <channel>` | Top users in channel |
+| `/context [channel]` | Show/list channel context for GPT |
 
-## Shared Maps Volume
+### Rule management
 
-The bot and Rspamd share a Docker volume (`maps-data`) for admin-managed map files:
+| Command | Description |
+|---------|-------------|
+| `/addregexp <pattern>` | Add regexp spam rule |
+| `/delregexp <pattern>` | Remove regexp rule |
+| `/listregexp` | List regexp rules |
+| `/addurl <url>` | Add spam URL |
+| `/delurl <url>` | Remove URL |
+| `/listurls` | List URL rules |
 
+### Quiz system
+
+| Command | Description |
+|---------|-------------|
+| `/quiz prompt <channel> <text>` | Set LLM prompt for generating questions |
+| `/quiz message <channel> <text>` | Set channel notification ({link}, {user} placeholders) |
+| `/quiz mode <channel> <suspicious\|all>` | When to quiz: spam signals only or every join |
+| `/quiz show <channel>` | Show quiz config |
+| `/quiz test <channel>` | Test quiz flow in moderator chat |
+
+All channel arguments accept names (e.g., `freebsd_ru`) or numeric IDs.
+
+## Deployment
+
+```bash
+# Full deploy: sync + build + recreate + deploy maps
+./deploy.sh myserver
+
+# Other actions
+./deploy.sh myserver sync         # rsync files only
+./deploy.sh myserver build        # sync + rebuild images
+./deploy.sh myserver restart      # sync + restart (no rebuild)
+./deploy.sh myserver logs         # tail remote logs
+./deploy.sh myserver status       # container status
+./deploy.sh myserver maps         # deploy seed maps to rspamd volume
+./deploy.sh myserver train spam <file>   # train neural on spam corpus
+./deploy.sh myserver train ham <file>    # train neural on ham corpus
+./deploy.sh myserver backup [dir]        # backup Redis + ClickHouse + maps
+./deploy.sh myserver restore <dir>       # restore backup to host
 ```
-maps-data volume
-├── spam_patterns.map   ← regexp rules (multimap content filter)
-├── spam_urls.map       ← URL/domain blocklist (multimap URL filter)
-└── spam_users.map      ← banned user IDs (multimap header filter)
-```
 
-- **Bot** mounts the volume at `/maps` and writes to map files when admins issue commands
-- **Rspamd** mounts the volume at `/etc/rspamd/maps.d` and reads map files via the multimap module
-- Rspamd automatically reloads maps when files change on disk
+First deploy — copy secrets manually:
+```bash
+scp .env myserver:~/rspamd-telegram-bot/.env
+scp config.yml myserver:~/rspamd-telegram-bot/config.yml
+```
 
 ## Project Structure
 
@@ -126,76 +181,82 @@ maps-data volume
 cmd/bot/main.go              Entry point
 internal/
   config/                    YAML + .env config loading
-  telegram/                  Bot setup, message handlers, admin commands
-  rspamd/                    HTTP client + RFC 2822 message builder
-  storage/                   ClickHouse client + schema
-  moderator/                 Moderator channel reporter
-  maps/                      Map file manager (regexp/URL rules)
+  telegram/                  Bot handlers, commands, quiz, context, profiling
+  rspamd/                    HTTP client + RFC 2822 MIME message builder
+  storage/                   ClickHouse client
+  moderator/                 Spam report formatter
+  maps/                      Map file manager (admin-managed rules)
+  quiz/                      Quiz session manager + LLM client
+  userpic/                   Profile photo vision analysis
 rspamd/
-  local.d/                   Rspamd module configs (multimap, etc.)
-  lua/telegram.lua           Custom Lua rules for Telegram context
-  maps.d/                    Seed map files (copied into volume on first run)
-  scores.d/                  Score overrides
+  local.d/                   Rspamd module configs
+  lua.local.d/               Custom Lua plugins (auto-loaded)
+    telegram.lua             Detection rules (new user link, join flood, etc.)
+    telegram_profile.lua     User profiling + reputation (Redis scripts)
+    telegram_suspect.lua     Suspicious profile detector
+  modules.local.d/           Module registration configs
+  maps.d/                    Seed map files (SA rules, URL blocklist, profile rules)
+  seed-maps/                 Generated maps from scripts (gitignored)
+  fasttext/                  FastText models (gitignored, deploy only)
+scripts/
+  parse_export.py            Parse Telegram HTML exports for training data
+  parse_bot_logs.py          Extract rules + spam corpus from antispam bot logs
 clickhouse/init.sql          ClickHouse schema
-deploy.sh                    Deploy script (rsync + docker compose)
+deploy.sh                    Deploy, train, backup/restore script
 ```
 
-## Deployment
+## Rspamd Symbols
 
-```bash
-# Full deploy: sync files, rebuild, recreate containers
-./deploy.sh myserver
+### Telegram rules (Lua)
+| Symbol | Score | Description |
+|--------|-------|-------------|
+| `TELEGRAM_NEW_USER_LINK` | 6.0 | New user posting URLs |
+| `TELEGRAM_FORWARD_SPAM` | 4.0 | Forwarded message with links |
+| `TELEGRAM_JOIN_FLOOD` | 3.0 | Multiple joins in short period |
+| `TELEGRAM_SUSPICIOUS_NAME` | 4.0 | Display name matches spam patterns |
+| `TELEGRAM_SHORT_FIRST_MSG` | 5.0 | Short first message with URL from new user |
+| `TELEGRAM_USER_REPUTATION` | -1.0 | Reputation bonus (multiplied by weight) |
+| `TELEGRAM_SUSPECT_PROFILE` | 4.0 | Random username, spam emoji in name |
+| `TELEGRAM_SUSPECT_USERPIC` | 5.0 | Suspicious profile photo (vision LLM) |
+| `TELEGRAM_QUIZ_FAILED` | 8.0 | User failed quiz verification |
 
-# Other actions
-./deploy.sh myserver sync      # only rsync files
-./deploy.sh myserver build     # sync + rebuild images
-./deploy.sh myserver restart   # sync + restart (no rebuild)
-./deploy.sh myserver logs      # tail remote logs
-./deploy.sh myserver status    # show container status
+### Profile rules (SA regexp, multimap)
+| Symbol | Score | Description |
+|--------|-------|-------------|
+| `TG_NAME_ENCLOSED_ALPHA` | 6.0 | Name uses enclosed Unicode letters (🄺🄰🅁🄸🄽🄰) |
+| `TG_NAME_MATH_FONT` | 6.0 | Name uses mathematical Unicode font (𝕬𝖓𝖓𝖆) |
+| `TG_SPAMMER_PROFILE_STRONG` | 5.0 | Both first+last name use fancy Unicode |
+| `TG_USERNAME_RANDOM` | 3.0 | Randomly generated username |
+| `TG_PREMIUM_SPAMMER` | 3.0 | Premium account with suspicious profile |
+
+### Neural / GPT
+| Symbol | Score | Description |
+|--------|-------|-------------|
+| `NEURAL_SPAM` | 10.0 | Neural network detected spam |
+| `NEURAL_HAM` | -5.0 | Neural network detected ham |
+| `GPT_SPAM` | 12.0 | GPT classified as spam |
+| `GPT_HAM` | -6.0 | GPT classified as ham |
+
+## Configuration
+
+### .env
 ```
-
-First deploy requires copying secrets manually:
-```bash
-scp .env myserver:~/rspamd-telegram-bot/.env
-scp config.yml myserver:~/rspamd-telegram-bot/config.yml
+BOT_TOKEN=your_telegram_bot_token
+RSPAMD_PASSWORD=your_rspamd_password
+OPENROUTER_API_KEY=sk-or-...              # for GPT, vision, quiz
+OPENROUTER_MODEL=google/gemini-2.0-flash-001
+OPENROUTER_VISION_MODEL=google/gemini-2.0-flash-001
 ```
-
-## Rspamd Integration Details
-
-### Message Format
-
-Telegram messages are wrapped as RFC 2822 MIME messages:
-- Standard headers: `From`, `To`, `Subject`, `Date`, `Message-ID`, `In-Reply-To`
-- Telegram metadata via `X-Telegram-*` headers (user ID, chat ID, message type, etc.)
-- Media attachments as `multipart/mixed` MIME parts
-
-### Custom Rules
-
-**Lua rules** (`rspamd/lua/telegram.lua`):
-- `TELEGRAM_NEW_USER_LINK` — new user posting URLs (Redis-tracked first-seen time)
-- `TELEGRAM_FORWARD_SPAM` — forwarded message with links
-- `TELEGRAM_JOIN_FLOOD` — multiple joins in short period
-- `TELEGRAM_SUSPICIOUS_NAME` — display name matches spam patterns
-- `TELEGRAM_CRYPTO_SPAM` — crypto/investment text patterns
-- `TELEGRAM_SHORT_FIRST_MSG` — short first message from new user with URL
-
-**Multimap rules** (`rspamd/local.d/multimap.conf`):
-- `TELEGRAM_SPAM_PATTERN` — matches content against admin-managed regexp patterns
-- `TELEGRAM_SPAM_URL` — matches URLs against admin-managed URL blocklist
-- `TELEGRAM_SPAM_USER` — matches user ID header against banned user list
-
-## Configuration Reference
 
 ### config.yml
-
 ```yaml
 telegram:
-  monitored_chats: [-1001234567890]    # group chat IDs to monitor
-  moderator_channel: -1009876543210    # spam reports + admin commands
+  monitored_chats: [-1001234567890]
+  moderator_channel: -1009876543210
 
 rspamd:
   url: "http://rspamd:11333"
-  password: "${RSPAMD_PASSWORD}"       # references .env
+  password: "${RSPAMD_PASSWORD}"
   timeout: 10s
 
 redis:
@@ -206,20 +267,13 @@ clickhouse:
   dsn: "clickhouse://clickhouse:9000/telegram_bot"
 
 thresholds:
-  log_score: 5.0                       # score to report to moderators
-  reject_score: 15.0                   # score for auto-action
+  log_score: 5.0
+  reject_score: 15.0
 
 maps:
-  dir: "/maps"                         # path to shared maps volume
-```
-
-### .env
-
-```
-BOT_TOKEN=your_telegram_bot_token_here
-RSPAMD_PASSWORD=your_rspamd_controller_password
+  dir: "/maps"
 ```
 
 ## License
 
-Apache License 2.0 - see [LICENSE](LICENSE)
+Apache License 2.0 — see [LICENSE](LICENSE)
