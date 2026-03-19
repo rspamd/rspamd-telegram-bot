@@ -70,17 +70,14 @@ func entitiesToHTML(text string, entities []models.MessageEntity) string {
 		case models.MessageEntityTypeURL:
 			sb.WriteString(fmt.Sprintf("<a href=\"%s\">%s</a>", entityText, entityText))
 		case models.MessageEntityTypeMention:
-			sb.WriteString(fmt.Sprintf("<a href=\"https://t.me/%s\">%s</a>",
-				html.EscapeString(strings.TrimPrefix(entityText, "@")), entityText))
+			// Keep mentions as plain text — converting to t.me links
+			// causes rspamd to treat them as URLs (false positive)
+			sb.WriteString(entityText)
 		case models.MessageEntityTypeEmail:
 			sb.WriteString(fmt.Sprintf("<a href=\"mailto:%s\">%s</a>", entityText, entityText))
 		case models.MessageEntityTypeTextMention:
-			if ent.User != nil {
-				sb.WriteString(fmt.Sprintf("<a href=\"tg://user?id=%d\">%s</a>",
-					ent.User.ID, entityText))
-			} else {
-				sb.WriteString(entityText)
-			}
+			// Keep as plain text — tg:// URLs are not meaningful for rspamd
+			sb.WriteString(entityText)
 		case models.MessageEntityTypeBlockquote, models.MessageEntityTypeExpandableBlockquote:
 			sb.WriteString("<blockquote>" + entityText + "</blockquote>")
 		case models.MessageEntityTypeSpoiler:
