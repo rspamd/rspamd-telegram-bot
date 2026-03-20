@@ -74,6 +74,10 @@ func New(ctx context.Context, cfg *config.Config, rspamdClient *rspamd.Client, s
 
 	opts := []bot.Option{
 		bot.WithDefaultHandler(tb.handleUpdate),
+		bot.WithAllowedUpdates(bot.AllowedUpdates{
+			"message",
+			"chat_member",
+		}),
 	}
 
 	b, err := bot.New(os.Getenv("BOT_TOKEN"), opts...)

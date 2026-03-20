@@ -2,6 +2,9 @@ package telegram
 
 import (
 	"context"
+	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -11,8 +14,36 @@ import (
 	"github.com/vstakhov/rspamd-telegram-bot/internal/storage"
 )
 
+// formatSymbolList returns a compact string of non-zero symbols for notifications.
+func formatSymbolList(result *rspamd.CheckResult) string {
+	type sym struct {
+		name  string
+		score float64
+	}
+	var syms []sym
+	for name, s := range result.Symbols {
+		if s.Score != 0 {
+			syms = append(syms, sym{name, s.Score})
+		}
+	}
+	sort.Slice(syms, func(i, j int) bool {
+		return syms[i].score > syms[j].score
+	})
+	var parts []string
+	for _, s := range syms {
+		parts = append(parts, fmt.Sprintf("%s(%.1f)", s.name, s.score))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // handleUpdate is the default handler for all updates.
 func (tb *Bot) handleUpdate(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// Handle ChatMember updates (joins via invite links, shared folders, etc.)
+	if update.ChatMember != nil {
+		tb.handleChatMemberUpdate(ctx, b, update.ChatMember)
+		return
+	}
+
 	if update.Message == nil {
 		return
 	}
@@ -164,6 +195,117 @@ func (tb *Bot) handleNewMembers(ctx context.Context, msg *models.Message) {
 			if err == nil && cfg.Mode == "all" {
 				tb.TriggerQuiz(ctx, tb.bot, msg.Chat.ID, &member)
 			}
+		}
+	}
+}
+
+// handleChatMemberUpdate handles ChatMemberUpdated events.
+// This catches joins via invite links, shared folders, join requests — methods that
+// don't generate NewChatMembers messages.
+func (tb *Bot) handleChatMemberUpdate(ctx context.Context, b *bot.Bot, cmu *models.ChatMemberUpdated) {
+	if !tb.isMonitored(cmu.Chat.ID) {
+		return
+	}
+
+	// Only interested in new member joins (was not member, now is member)
+	oldStatus := cmu.OldChatMember.Type
+	newStatus := cmu.NewChatMember.Type
+
+	isJoin := (oldStatus == models.ChatMemberTypeLeft || oldStatus == models.ChatMemberTypeBanned || oldStatus == "") &&
+		(newStatus == models.ChatMemberTypeMember || newStatus == models.ChatMemberTypeAdministrator)
+
+	if !isJoin {
+		return
+	}
+
+	user := cmu.From
+	if user.IsBot {
+		return
+	}
+
+	tb.logger.Info("chat member join detected",
+		"user_id", user.ID,
+		"username", user.Username,
+		"first_name", user.FirstName,
+		"chat_id", cmu.Chat.ID,
+		"via_folder", cmu.ViaChatFolderInviteLink,
+		"via_join_request", cmu.ViaJoinRequest,
+	)
+
+	// ViaChatFolderInviteLink is a strong spam signal — store in profile
+	if cmu.ViaChatFolderInviteLink {
+		profileKey := fmt.Sprintf("tg_profile:%d", user.ID)
+		tb.redis.HSet(ctx, profileKey, "joined_via_folder", "true")
+		tb.logger.Warn("user joined via shared folder link (spam indicator)",
+			"user_id", user.ID,
+			"username", user.Username,
+			"chat_id", cmu.Chat.ID,
+		)
+	}
+
+	// Scan join event through rspamd
+	tgMsg := &rspamd.TelegramMessage{
+		ChatID:          cmu.Chat.ID,
+		ChatTitle:       cmu.Chat.Title,
+		UserID:          user.ID,
+		Username:        user.Username,
+		FirstName:       user.FirstName,
+		LastName:        user.LastName,
+		IsBot:           user.IsBot,
+		IsPremium:       user.IsPremium,
+		JoinedViaFolder: cmu.ViaChatFolderInviteLink,
+		Text:            buildJoinText(&user),
+		MessageType:     "join",
+		UserpicRisk:     -1,
+	}
+
+	// Analyze userpic for new joiners
+	if tb.userpic != nil && tb.userpic.Enabled() {
+		tb.analyzeUserpicIfNew(ctx, &user, tgMsg)
+	}
+
+	result, err := tb.rspamd.Check(ctx, tgMsg)
+	if err != nil {
+		tb.logger.Error("rspamd check failed for chat member join",
+			"user_id", user.ID,
+			"error", err,
+		)
+		return
+	}
+
+	// Auto-ban if score >= reject threshold (folder spammers, etc.)
+	if result.Score >= tb.cfg.Thresholds.RejectScore {
+		_, banErr := b.BanChatMember(ctx, &bot.BanChatMemberParams{
+			ChatID: cmu.Chat.ID,
+			UserID: user.ID,
+		})
+		if banErr != nil {
+			tb.logger.Error("auto-ban failed", "user_id", user.ID, "error", banErr)
+		} else {
+			tb.logger.Info("auto-banned on join", "user_id", user.ID, "score", result.Score)
+		}
+
+		tb.sendHTML(ctx, b, tb.cfg.Telegram.ModeratorChannel,
+			fmt.Sprintf("<b>Auto-banned on join:</b> %s (@%s)\n<b>Score:</b> %.1f\n<b>Reason:</b> %s",
+				adminEscapeHTML(user.FirstName),
+				adminEscapeHTML(user.Username),
+				result.Score,
+				formatSymbolList(result),
+			), 0)
+		return
+	}
+
+	if result.Score >= tb.cfg.Thresholds.LogScore {
+		if err := tb.reporter.Report(ctx, tgMsg, result); err != nil {
+			tb.logger.Error("moderator report failed", "user_id", user.ID, "error", err)
+		}
+	}
+
+	// Trigger quiz on join if configured
+	if tb.quiz != nil {
+		cfg, err := tb.quiz.GetConfig(ctx, cmu.Chat.ID)
+		if err == nil && cfg.Mode == "all" {
+			tb.TriggerQuiz(ctx, b, cmu.Chat.ID, &user)
 		}
 	}
 }

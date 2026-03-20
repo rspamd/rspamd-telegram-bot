@@ -29,8 +29,9 @@ type TelegramMessage struct {
 	ReplyToUserID  int64
 	ForwardFrom    int64
 	IsForward      bool
-	IsAdmin        bool
-	Readonly       bool
+	IsAdmin          bool
+	JoinedViaFolder  bool
+	Readonly         bool
 	UserpicRisk    float64 // -1 = not analyzed, 0.0-1.0 = risk score
 	Timestamp      time.Time
 }
@@ -81,6 +82,9 @@ func BuildMessage(msg *TelegramMessage) ([]byte, error) {
 	}
 	writeHeader(&buf, "X-Telegram-Is-Forward", fmt.Sprintf("%t", msg.IsForward))
 	writeHeader(&buf, "X-Telegram-Is-Admin", fmt.Sprintf("%t", msg.IsAdmin))
+	if msg.JoinedViaFolder {
+		writeHeader(&buf, "X-Telegram-Joined-Via-Folder", "true")
+	}
 	if msg.UserpicRisk >= 0 {
 		writeHeader(&buf, "X-Telegram-Userpic-Risk", fmt.Sprintf("%.2f", msg.UserpicRisk))
 	}

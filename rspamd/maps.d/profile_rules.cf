@@ -67,6 +67,16 @@ meta TG_SPAMMER_PROFILE_GIBBERISH TG_NAME_GIBBERISH && TG_LASTNAME_GIBBERISH
 score TG_SPAMMER_PROFILE_GIBBERISH 4.0
 describe TG_SPAMMER_PROFILE_GIBBERISH Both first and last name are gibberish
 
+# Joined via shared folder invite link (strong spam signal)
+header TG_JOINED_VIA_FOLDER X-Telegram-Joined-Via-Folder =~ /^true$/
+score TG_JOINED_VIA_FOLDER 5.0
+describe TG_JOINED_VIA_FOLDER User joined via shared folder invite link
+
+# Folder join + suspicious profile = instant ban territory
+meta TG_FOLDER_SPAMMER TG_JOINED_VIA_FOLDER && (TG_NAME_ENCLOSED_ALPHA || TG_NAME_MATH_FONT || TG_USERNAME_RANDOM || TG_NAME_GIBBERISH || TG_NAME_EMOJI_ONLY)
+score TG_FOLDER_SPAMMER 10.0
+describe TG_FOLDER_SPAMMER Folder join + suspicious profile (auto-ban)
+
 meta TG_SPAMMER_PROFILE_RANDOM TG_USERNAME_RANDOM && (TG_NAME_ENCLOSED_ALPHA || TG_NAME_MATH_FONT || TG_NAME_GIBBERISH)
 score TG_SPAMMER_PROFILE_RANDOM 5.0
 describe TG_SPAMMER_PROFILE_RANDOM Random username combined with suspicious display name
