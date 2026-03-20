@@ -151,6 +151,43 @@ func (tb *Bot) processMessage(ctx context.Context, msg *models.Message) {
 				"error", err,
 			)
 		}
+
+		// Auto-ban if score >= reject threshold
+		if result.Score >= tb.cfg.Thresholds.RejectScore {
+			tb.bot.DeleteMessage(ctx, &bot.DeleteMessageParams{
+				ChatID:    msg.Chat.ID,
+				MessageID: msg.ID,
+			})
+			tb.bot.BanChatMember(ctx, &bot.BanChatMemberParams{
+				ChatID: msg.Chat.ID,
+				UserID: msg.From.ID,
+			})
+			tb.logger.Info("auto-banned for spam message",
+				"user_id", msg.From.ID,
+				"score", result.Score,
+			)
+		} else if tb.quiz != nil && tb.quiz.IsConfigured(ctx, msg.Chat.ID) {
+			// Score above log but below reject — restrict + quiz
+			// Delete the spam message
+			tb.bot.DeleteMessage(ctx, &bot.DeleteMessageParams{
+				ChatID:    msg.Chat.ID,
+				MessageID: msg.ID,
+			})
+			// Restrict user to read-only
+			tb.bot.RestrictChatMember(ctx, &bot.RestrictChatMemberParams{
+				ChatID: msg.Chat.ID,
+				UserID: msg.From.ID,
+				Permissions: &models.ChatPermissions{
+					CanSendMessages: false,
+				},
+			})
+			// Trigger quiz
+			tb.TriggerQuiz(ctx, tb.bot, msg.Chat.ID, msg.From)
+			tb.logger.Info("restricted + quiz triggered for spam",
+				"user_id", msg.From.ID,
+				"score", result.Score,
+			)
+		}
 	}
 }
 

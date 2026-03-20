@@ -505,6 +505,25 @@ func (tb *Bot) handlePrivateMessage(ctx context.Context, b *bot.Bot, update *mod
 		tb.redis.HSet(ctx, profileKey, "quiz_result", "pass")
 		tb.redis.HSet(ctx, profileKey, "quiz_reason", reason)
 
+		// Unrestrict user in channel
+		b.RestrictChatMember(ctx, &bot.RestrictChatMemberParams{
+			ChatID: session.ChannelID,
+			UserID: session.UserID,
+			Permissions: &models.ChatPermissions{
+				CanSendMessages:       true,
+				CanSendAudios:         true,
+				CanSendDocuments:      true,
+				CanSendPhotos:         true,
+				CanSendVideos:         true,
+				CanSendVideoNotes:     true,
+				CanSendVoiceNotes:     true,
+				CanSendPolls:          true,
+				CanSendOtherMessages:  true,
+				CanAddWebPagePreviews: true,
+				CanInviteUsers:        true,
+			},
+		})
+
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: msg.Chat.ID,
 			Text:   fmt.Sprintf("You passed the verification!\n\nReason: %s", reason),
