@@ -505,7 +505,7 @@ func (tb *Bot) handlePrivateMessage(ctx context.Context, b *bot.Bot, update *mod
 		tb.redis.HSet(ctx, profileKey, "quiz_result", "pass")
 		tb.redis.HSet(ctx, profileKey, "quiz_reason", reason)
 
-		// Unrestrict user in channel
+		// Unrestrict user in channel — restore all permissions
 		b.RestrictChatMember(ctx, &bot.RestrictChatMemberParams{
 			ChatID: session.ChannelID,
 			UserID: session.UserID,
@@ -520,7 +520,10 @@ func (tb *Bot) handlePrivateMessage(ctx context.Context, b *bot.Bot, update *mod
 				CanSendPolls:          true,
 				CanSendOtherMessages:  true,
 				CanAddWebPagePreviews: true,
+				CanChangeInfo:         true,
 				CanInviteUsers:        true,
+				CanPinMessages:        true,
+				CanManageTopics:       true,
 			},
 		})
 

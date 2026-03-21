@@ -173,12 +173,25 @@ func (tb *Bot) processMessage(ctx context.Context, msg *models.Message) {
 				ChatID:    msg.Chat.ID,
 				MessageID: msg.ID,
 			})
-			// Restrict user to read-only
+			// Restrict user to read-only (keep all other perms to minimize side effects)
 			tb.bot.RestrictChatMember(ctx, &bot.RestrictChatMemberParams{
 				ChatID: msg.Chat.ID,
 				UserID: msg.From.ID,
 				Permissions: &models.ChatPermissions{
-					CanSendMessages: false,
+					CanSendMessages:       false,
+					CanSendAudios:         false,
+					CanSendDocuments:      false,
+					CanSendPhotos:         false,
+					CanSendVideos:         false,
+					CanSendVideoNotes:     false,
+					CanSendVoiceNotes:     false,
+					CanSendPolls:          false,
+					CanSendOtherMessages:  false,
+					CanAddWebPagePreviews: false,
+					CanChangeInfo:         true,
+					CanInviteUsers:        true,
+					CanPinMessages:        true,
+					CanManageTopics:       true,
 				},
 			})
 			// Trigger quiz
