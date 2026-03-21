@@ -310,8 +310,12 @@ func (tb *Bot) handleChatMemberUpdate(ctx context.Context, b *bot.Bot, cmu *mode
 		return
 	}
 
-	// Auto-ban if score >= reject threshold (folder spammers, etc.)
-	if result.Score >= tb.cfg.Thresholds.RejectScore {
+	// Auto-ban: score >= reject threshold OR folder join + high userpic risk
+	shouldBan := result.Score >= tb.cfg.Thresholds.RejectScore
+	if cmu.ViaChatFolderInviteLink && tgMsg.UserpicRisk > 0.7 {
+		shouldBan = true
+	}
+	if shouldBan {
 		_, banErr := b.BanChatMember(ctx, &bot.BanChatMemberParams{
 			ChatID: cmu.Chat.ID,
 			UserID: user.ID,

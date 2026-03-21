@@ -77,6 +77,15 @@ meta TG_FOLDER_SPAMMER TG_JOINED_VIA_FOLDER && (TG_NAME_ENCLOSED_ALPHA || TG_NAM
 score TG_FOLDER_SPAMMER 10.0
 describe TG_FOLDER_SPAMMER Folder join + suspicious profile (auto-ban)
 
+# Folder join + suspicious userpic (vision analysis detected stock/provocative photo)
+header TG_USERPIC_RISKY X-Telegram-Userpic-Risk =~ /^0\.[7-9]|^1\./
+score TG_USERPIC_RISKY 0.0
+describe TG_USERPIC_RISKY High userpic risk score (informational)
+
+meta TG_FOLDER_USERPIC_SPAMMER TG_JOINED_VIA_FOLDER && TG_USERPIC_RISKY
+score TG_FOLDER_USERPIC_SPAMMER 10.0
+describe TG_FOLDER_USERPIC_SPAMMER Folder join + suspicious profile photo (auto-ban)
+
 meta TG_SPAMMER_PROFILE_RANDOM TG_USERNAME_RANDOM && (TG_NAME_ENCLOSED_ALPHA || TG_NAME_MATH_FONT || TG_NAME_GIBBERISH)
 score TG_SPAMMER_PROFILE_RANDOM 5.0
 describe TG_SPAMMER_PROFILE_RANDOM Random username combined with suspicious display name
