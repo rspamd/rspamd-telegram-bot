@@ -18,6 +18,7 @@ Thumbs.db
 
 # Go
 vendor/
+dist/
 
 # Training data
 *.txt
@@ -25,6 +26,11 @@ vendor/
 
 # Claude cache
 .claude/cache/
+
+# Web frontend build artifacts
+web/node_modules/
+web/.next/
+web/out/
 
 # FastText models (large binaries, deploy only)
 rspamd/fasttext/*.bin

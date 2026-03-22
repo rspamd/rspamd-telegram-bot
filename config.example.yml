@@ -20,3 +20,7 @@ thresholds:
 
 maps:
   dir: "/maps"
+
+web:
+  listen: ":8080"
+  auth_token: "${WEB_AUTH_TOKEN}"

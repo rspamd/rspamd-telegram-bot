@@ -17,6 +17,12 @@ type Config struct {
 	ClickHouse ClickHouseConfig `yaml:"clickhouse"`
 	Thresholds ThresholdsConfig `yaml:"thresholds"`
 	Maps       MapsConfig       `yaml:"maps"`
+	Web        WebConfig        `yaml:"web"`
+}
+
+type WebConfig struct {
+	Listen    string `yaml:"listen"`
+	AuthToken string `yaml:"auth_token"`
 }
 
 type TelegramConfig struct {
@@ -90,6 +96,7 @@ func Load(path string) (*Config, error) {
 		ClickHouse ClickHouseConfig `yaml:"clickhouse"`
 		Thresholds ThresholdsConfig `yaml:"thresholds"`
 		Maps       MapsConfig       `yaml:"maps"`
+		Web        WebConfig        `yaml:"web"`
 	}
 
 	if err := yaml.Unmarshal([]byte(expanded), &raw); err != nil {
@@ -112,6 +119,7 @@ func Load(path string) (*Config, error) {
 		ClickHouse: raw.ClickHouse,
 		Thresholds: raw.Thresholds,
 		Maps:       raw.Maps,
+		Web:        raw.Web,
 	}
 
 	return cfg, nil
