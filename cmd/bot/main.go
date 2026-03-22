@@ -45,6 +45,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
+	store.EnableBuffer()
+	defer store.FlushAndStop()
 
 	// Initialize Rspamd client
 	rspamdClient := rspamd.NewClient(cfg.Rspamd.URL, cfg.Rspamd.Password, cfg.Rspamd.Timeout, logger)

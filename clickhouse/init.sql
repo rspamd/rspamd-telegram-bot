@@ -23,3 +23,16 @@ CREATE TABLE IF NOT EXISTS telegram_bot.messages (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (chat_id, timestamp, message_id);
+
+-- Bot action events (bans, deletes, quizzes, etc.)
+CREATE TABLE IF NOT EXISTS telegram_bot.bot_events (
+    event_type    LowCardinality(String),  -- ban, delete, quiz_triggered, quiz_passed, quiz_failed, quiz_timeout, restrict
+    chat_id       Int64,
+    user_id       Int64,
+    username      String,
+    first_name    String,
+    detail        String,                  -- reason, score, etc.
+    timestamp     DateTime DEFAULT now()
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (chat_id, timestamp, event_type);

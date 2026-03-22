@@ -5,6 +5,40 @@ import (
 	"strconv"
 )
 
+func (s *Server) handleUserMessages(w http.ResponseWriter, r *http.Request) {
+	userID, _ := strconv.ParseInt(r.URL.Query().Get("user_id"), 10, 64)
+	chatID, _ := strconv.ParseInt(r.URL.Query().Get("chat_id"), 10, 64)
+	if userID == 0 {
+		writeError(w, "user_id is required", http.StatusBadRequest)
+		return
+	}
+
+	msgs, err := s.storage.UserMessages(r.Context(), userID, chatID, 10)
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, msgs)
+}
+
+func (s *Server) handleEventStats(w http.ResponseWriter, r *http.Request) {
+	chatID, _ := strconv.ParseInt(r.URL.Query().Get("chat_id"), 10, 64)
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "day"
+	}
+
+	stats, err := s.storage.GetEventStats(r.Context(), chatID, period)
+	if err != nil {
+		// Table may not exist yet, return zeros
+		writeJSON(w, map[string]int{})
+		return
+	}
+
+	writeJSON(w, stats)
+}
+
 func (s *Server) handleStatsOverview(w http.ResponseWriter, r *http.Request) {
 	chatID, _ := strconv.ParseInt(r.URL.Query().Get("chat_id"), 10, 64)
 	period := r.URL.Query().Get("period")

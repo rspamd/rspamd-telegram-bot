@@ -112,7 +112,7 @@ func (c *Client) TopTalkers(ctx context.Context, chatID int64, period string, li
 		SELECT
 			user_id,
 			any(username) AS username,
-			any(first_name) AS first_name,
+			any(concat(first_name, if(last_name != '', concat(' ', last_name), ''))) AS first_name,
 			count() AS msg_count,
 			any(text) AS sample_message
 		FROM telegram_bot.messages
@@ -141,6 +141,48 @@ func (c *Client) TopTalkers(ctx context.Context, chatID int64, period string, li
 	}
 
 	return result, nil
+}
+
+// UserMessages returns recent messages from a specific user.
+func (c *Client) UserMessages(ctx context.Context, userID, chatID int64, limit int) ([]SearchResult, error) {
+	chatFilter := ""
+	args := []interface{}{userID}
+	if chatID != 0 {
+		chatFilter = "AND chat_id = ?"
+		args = append(args, chatID)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			message_id, chat_id, user_id, username, first_name,
+			text, toUnixTimestamp(timestamp), rspamd_score, is_spam
+		FROM telegram_bot.messages
+		WHERE user_id = ?
+			AND length(text) > 0
+			%s
+		ORDER BY timestamp DESC
+		LIMIT ?
+	`, chatFilter)
+
+	args = append(args, limit)
+	rows, err := c.conn.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("user messages: %w", err)
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+	for rows.Next() {
+		var r SearchResult
+		var isSpam uint8
+		if err := rows.Scan(&r.MessageID, &r.ChatID, &r.UserID, &r.Username, &r.FirstName,
+			&r.Text, &r.Timestamp, &r.Score, &isSpam); err != nil {
+			return nil, err
+		}
+		r.IsSpam = isSpam == 1
+		results = append(results, r)
+	}
+	return results, nil
 }
 
 // FuzzySearch finds messages similar to the query using ClickHouse ngramDistance.
@@ -295,7 +337,7 @@ func (c *Client) MessageLengthDistribution(ctx context.Context, chatID int64, pe
 			AND message_type != 'join'
 			%s
 		GROUP BY len_range
-		ORDER BY cnt DESC
+		ORDER BY min(length(text)) ASC
 	`, interval, chatFilter)
 
 	rows, err := c.conn.Query(ctx, query, args...)
@@ -313,6 +355,47 @@ func (c *Client) MessageLengthDistribution(ctx context.Context, chatID int64, pe
 		result = append(result, b)
 	}
 	return result, nil
+}
+
+// EventStats holds bot event counts.
+type EventStats struct {
+	Bans          uint64 `json:"bans"`
+	Deletes       uint64 `json:"deletes"`
+	QuizTriggered uint64 `json:"quiz_triggered"`
+	QuizPassed    uint64 `json:"quiz_passed"`
+	QuizFailed    uint64 `json:"quiz_failed"`
+	Restricts     uint64 `json:"restricts"`
+}
+
+// GetEventStats returns bot event counts for a period.
+func (c *Client) GetEventStats(ctx context.Context, chatID int64, period string) (*EventStats, error) {
+	interval := periodToInterval(period)
+	chatFilter := ""
+	args := []interface{}{}
+	if chatID != 0 {
+		chatFilter = "AND chat_id = ?"
+		args = append(args, chatID)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			countIf(event_type = 'ban') AS bans,
+			countIf(event_type = 'delete') AS deletes,
+			countIf(event_type = 'quiz_triggered') AS quiz_triggered,
+			countIf(event_type = 'quiz_passed') AS quiz_passed,
+			countIf(event_type IN ('quiz_failed', 'quiz_timeout')) AS quiz_failed,
+			countIf(event_type = 'restrict') AS restricts
+		FROM telegram_bot.bot_events
+		WHERE timestamp >= now() - INTERVAL %s %s
+	`, interval, chatFilter)
+
+	var stats EventStats
+	row := c.conn.QueryRow(ctx, query, args...)
+	if err := row.Scan(&stats.Bans, &stats.Deletes, &stats.QuizTriggered,
+		&stats.QuizPassed, &stats.QuizFailed, &stats.Restricts); err != nil {
+		return nil, fmt.Errorf("event stats: %w", err)
+	}
+	return &stats, nil
 }
 
 // GetTableStats returns ClickHouse table statistics.

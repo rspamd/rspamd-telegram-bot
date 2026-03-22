@@ -50,6 +50,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/stats/channels", s.authMiddleware(s.handleChannels))
 	s.mux.HandleFunc("GET /api/stats/timeline", s.authMiddleware(s.handleTimeline))
 	s.mux.HandleFunc("GET /api/stats/lengths", s.authMiddleware(s.handleLengthDist))
+	s.mux.HandleFunc("GET /api/stats/user-messages", s.authMiddleware(s.handleUserMessages))
+	s.mux.HandleFunc("GET /api/stats/actions", s.authMiddleware(s.handleEventStats))
 
 	s.mux.HandleFunc("POST /api/search", s.authMiddleware(s.handleSearch))
 

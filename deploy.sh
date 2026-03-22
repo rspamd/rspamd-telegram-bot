@@ -143,6 +143,9 @@ do_local_deploy() {
     do_local_build
     do_sync
 
+    echo "==> Pruning old Docker images on $HOST"
+    ssh_cmd "docker image prune -f && docker builder prune -af" 2>/dev/null || true
+
     echo "==> Deploying binaries to $HOST"
 
     # Copy binaries
@@ -163,7 +166,7 @@ do_local_deploy() {
 
     echo "==> Updating web container"
     ssh_cmd "cd $REMOTE_DIR && $COMPOSE_CMD cp dist/web-server web:/usr/local/bin/web-server"
-    ssh_cmd "cd $REMOTE_DIR && $COMPOSE_CMD cp -r web/out web:/app/web/out"
+    ssh_cmd "cd $REMOTE_DIR && tar -cf - -C web/out . | $COMPOSE_CMD exec -T web sh -c 'rm -rf /app/web/out && mkdir -p /app/web/out && tar -xf - -C /app/web/out'"
     ssh_cmd "cd $REMOTE_DIR && $COMPOSE_CMD restart web" 2>/dev/null || true
 
     do_maps

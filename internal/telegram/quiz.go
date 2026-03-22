@@ -550,6 +550,8 @@ func (tb *Bot) handlePrivateMessage(ctx context.Context, b *bot.Bot, update *mod
 			})
 		}
 
+		tb.storage.StoreEvent(ctx, "quiz_passed", session.ChannelID, session.UserID,
+			msg.From.Username, msg.From.FirstName, reason)
 		tb.logger.Info("quiz passed", "user_id", session.UserID, "channel_id", session.ChannelID)
 	} else {
 		tb.quizFail(ctx, b, session, msg.Chat.ID,
@@ -580,8 +582,10 @@ func (tb *Bot) quizFail(ctx context.Context, b *bot.Bot, session *quiz.Session, 
 	if err != nil {
 		tb.logger.Warn("quiz ban failed", "user_id", session.UserID, "channel_id", session.ChannelID, "error", err)
 	} else {
+		tb.storage.StoreEvent(ctx, "ban", session.ChannelID, session.UserID, "", "", "quiz fail: "+reason)
 		tb.logger.Info("quiz ban applied", "user_id", session.UserID, "channel_id", session.ChannelID)
 	}
+	tb.storage.StoreEvent(ctx, "quiz_failed", session.ChannelID, session.UserID, "", "", reason)
 
 	// Delete channel quiz message
 	if session.MessageID != 0 {
@@ -658,6 +662,8 @@ func (tb *Bot) TriggerQuiz(ctx context.Context, b *bot.Bot, channelID int64, use
 		})
 	}()
 
+	tb.storage.StoreEvent(ctx, "quiz_triggered", channelID, user.ID,
+		user.Username, user.FirstName, "")
 	tb.logger.Info("quiz triggered",
 		"user_id", user.ID,
 		"channel_id", channelID,

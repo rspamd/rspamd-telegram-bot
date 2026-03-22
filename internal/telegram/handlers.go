@@ -123,12 +123,7 @@ func (tb *Bot) processMessage(ctx context.Context, msg *models.Message) {
 		IsSpam:           isSpam,
 	}
 
-	if err := tb.storage.Store(ctx, storeMsg); err != nil {
-		tb.logger.Error("clickhouse store failed",
-			"message_id", msg.ID,
-			"error", err,
-		)
-	}
+	tb.storage.StoreBuffered(ctx, storeMsg)
 
 	// Update channel context for legitimate messages (for GPT module)
 	if !isSpam {
@@ -162,6 +157,11 @@ func (tb *Bot) processMessage(ctx context.Context, msg *models.Message) {
 				ChatID: msg.Chat.ID,
 				UserID: msg.From.ID,
 			})
+			tb.storage.StoreEvent(ctx, "ban", msg.Chat.ID, msg.From.ID,
+				msg.From.Username, msg.From.FirstName,
+				fmt.Sprintf("auto-ban score=%.1f", result.Score))
+			tb.storage.StoreEvent(ctx, "delete", msg.Chat.ID, msg.From.ID,
+				msg.From.Username, msg.From.FirstName, "spam message deleted")
 			tb.logger.Info("auto-banned for spam message",
 				"user_id", msg.From.ID,
 				"score", result.Score,
@@ -196,6 +196,11 @@ func (tb *Bot) processMessage(ctx context.Context, msg *models.Message) {
 			})
 			// Trigger quiz
 			tb.TriggerQuiz(ctx, tb.bot, msg.Chat.ID, msg.From)
+			tb.storage.StoreEvent(ctx, "delete", msg.Chat.ID, msg.From.ID,
+				msg.From.Username, msg.From.FirstName, "spam message deleted")
+			tb.storage.StoreEvent(ctx, "restrict", msg.Chat.ID, msg.From.ID,
+				msg.From.Username, msg.From.FirstName,
+				fmt.Sprintf("restricted for quiz, score=%.1f", result.Score))
 			tb.logger.Info("restricted + quiz triggered for spam",
 				"user_id", msg.From.ID,
 				"score", result.Score,
@@ -229,6 +234,22 @@ func (tb *Bot) handleNewMembers(ctx context.Context, msg *models.Message) {
 			)
 			continue
 		}
+
+		// Store join event in ClickHouse
+		tb.storage.StoreBuffered(ctx, &storage.Message{
+			MessageID:   int64(msg.ID),
+			ChatID:      msg.Chat.ID,
+			UserID:      member.ID,
+			Username:    member.Username,
+			FirstName:   member.FirstName,
+			LastName:    member.LastName,
+			Text:        buildJoinText(&member),
+			MessageType: "join",
+			Timestamp:   time.Unix(int64(msg.Date), 0),
+			RspamdScore: float32(result.Score),
+			RspamdAction: result.Action,
+			IsSpam:      result.Score >= tb.cfg.Thresholds.LogScore,
+		})
 
 		if result.Score >= tb.cfg.Thresholds.LogScore {
 			if err := tb.reporter.Report(ctx, tgMsg, result); err != nil {
@@ -323,6 +344,21 @@ func (tb *Bot) handleChatMemberUpdate(ctx context.Context, b *bot.Bot, cmu *mode
 		return
 	}
 
+	// Store join event in ClickHouse
+	tb.storage.StoreBuffered(ctx, &storage.Message{
+		ChatID:      cmu.Chat.ID,
+		UserID:      user.ID,
+		Username:    user.Username,
+		FirstName:   user.FirstName,
+		LastName:    user.LastName,
+		Text:        buildJoinText(&user),
+		MessageType: "join",
+		Timestamp:   time.Unix(int64(cmu.Date), 0),
+		RspamdScore: float32(result.Score),
+		RspamdAction: result.Action,
+		IsSpam:      result.Score >= tb.cfg.Thresholds.LogScore,
+	})
+
 	// Auto-ban: score >= reject threshold OR folder join + high userpic risk
 	shouldBan := result.Score >= tb.cfg.Thresholds.RejectScore
 	if cmu.ViaChatFolderInviteLink && tgMsg.UserpicRisk > 0.7 {
@@ -336,6 +372,9 @@ func (tb *Bot) handleChatMemberUpdate(ctx context.Context, b *bot.Bot, cmu *mode
 		if banErr != nil {
 			tb.logger.Error("auto-ban failed", "user_id", user.ID, "error", banErr)
 		} else {
+			tb.storage.StoreEvent(ctx, "ban", cmu.Chat.ID, user.ID,
+				user.Username, user.FirstName,
+				fmt.Sprintf("auto-ban on join, score=%.1f", result.Score))
 			tb.logger.Info("auto-banned on join", "user_id", user.ID, "score", result.Score)
 		}
 

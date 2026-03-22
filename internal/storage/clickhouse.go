@@ -32,6 +32,7 @@ type Message struct {
 // Client is a ClickHouse storage client.
 type Client struct {
 	conn   driver.Conn
+	buffer *Buffer
 	logger *slog.Logger
 }
 
@@ -114,6 +115,44 @@ func (c *Client) Store(ctx context.Context, msg *Message) error {
 	)
 
 	return nil
+}
+
+// StoreEvent records a bot action event via the buffer.
+// If no buffer is set, falls back to direct insert.
+func (c *Client) StoreEvent(ctx context.Context, eventType string, chatID, userID int64, username, firstName, detail string) {
+	if c.buffer != nil {
+		c.buffer.AddEvent(eventType, chatID, userID, username, firstName, detail)
+		return
+	}
+	err := c.conn.Exec(ctx, `
+		INSERT INTO telegram_bot.bot_events (event_type, chat_id, user_id, username, first_name, detail)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		eventType, chatID, userID, username, firstName, detail,
+	)
+	if err != nil {
+		c.logger.Error("store event failed", "event", eventType, "error", err)
+	}
+}
+
+// StoreBuffered stores a message via the buffer.
+func (c *Client) StoreBuffered(ctx context.Context, msg *Message) {
+	if c.buffer != nil {
+		c.buffer.AddMessage(msg)
+		return
+	}
+	c.Store(ctx, msg)
+}
+
+// EnableBuffer activates batched inserts.
+func (c *Client) EnableBuffer() {
+	c.buffer = NewBuffer(c)
+}
+
+// FlushAndStop flushes and stops the buffer.
+func (c *Client) FlushAndStop() {
+	if c.buffer != nil {
+		c.buffer.Stop()
+	}
 }
 
 // Close closes the ClickHouse connection.
