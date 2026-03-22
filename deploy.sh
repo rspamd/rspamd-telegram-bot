@@ -12,6 +12,8 @@ set -euo pipefail
 #   ./deploy.sh <host> status       # show remote container status
 #   ./deploy.sh <host> train spam <file>  # train neural on spam
 #   ./deploy.sh <host> train ham <file>   # train neural on ham
+#   ./deploy.sh <host> local-build   # cross-compile locally (fast)
+#   ./deploy.sh <host> local-deploy  # local build + deploy binaries (no Docker rebuild)
 #   ./deploy.sh <host> maps         # deploy seed maps into rspamd volume
 #   ./deploy.sh <host> backup [dir]  # backup Redis + ClickHouse + maps to local dir
 #   ./deploy.sh <host> restore [dir] # restore backup to host
@@ -114,6 +116,60 @@ do_maps() {
     done
 
     echo "    Maps deployed. Rspamd will reload automatically."
+}
+
+do_local_build() {
+    echo "==> Building locally for linux/amd64"
+
+    # Build Go binaries
+    echo "    Building bot..."
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o "${SCRIPT_DIR}/dist/bot" ./cmd/bot
+    echo "    Building web server..."
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o "${SCRIPT_DIR}/dist/web-server" ./cmd/web
+
+    # Build Next.js frontend
+    if [ -d "${SCRIPT_DIR}/web/node_modules" ]; then
+        echo "    Building frontend..."
+        (cd "${SCRIPT_DIR}/web" && npm run build)
+    else
+        echo "    Installing frontend deps..."
+        (cd "${SCRIPT_DIR}/web" && npm install && npm run build)
+    fi
+
+    echo "    Build complete: dist/bot, dist/web-server, web/out/"
+}
+
+do_local_deploy() {
+    do_local_build
+    do_sync
+
+    echo "==> Deploying binaries to $HOST"
+
+    # Copy binaries
+    scp -q "${SCRIPT_DIR}/dist/bot" "$HOST:$REMOTE_DIR/dist/bot"
+    scp -q "${SCRIPT_DIR}/dist/web-server" "$HOST:$REMOTE_DIR/dist/web-server"
+
+    # Copy frontend
+    ssh_cmd "mkdir -p $REMOTE_DIR/web/out"
+    rsync -az --delete "${SCRIPT_DIR}/web/out/" "$HOST:$REMOTE_DIR/web/out/"
+
+    detect_compose
+
+    # Restart services using local binaries via docker-compose override
+    # For now, just copy into running containers and restart
+    echo "==> Updating bot container"
+    ssh_cmd "cd $REMOTE_DIR && $COMPOSE_CMD cp dist/bot bot:/usr/local/bin/bot"
+    ssh_cmd "cd $REMOTE_DIR && $COMPOSE_CMD restart bot"
+
+    echo "==> Updating web container"
+    ssh_cmd "cd $REMOTE_DIR && $COMPOSE_CMD cp dist/web-server web:/usr/local/bin/web-server"
+    ssh_cmd "cd $REMOTE_DIR && $COMPOSE_CMD cp -r web/out web:/app/web/out"
+    ssh_cmd "cd $REMOTE_DIR && $COMPOSE_CMD restart web" 2>/dev/null || true
+
+    do_maps
+
+    echo ""
+    echo "==> Local deploy complete (no Docker rebuild)."
 }
 
 do_build() {
@@ -367,6 +423,12 @@ case "$ACTION" in
         ;;
     status)
         do_status
+        ;;
+    local-build)
+        do_local_build
+        ;;
+    local-deploy)
+        do_local_deploy
         ;;
     maps)
         do_maps
